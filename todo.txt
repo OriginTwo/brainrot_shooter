@@ -1,0 +1,61 @@
+# system/engine
+	X window              [WND]
+	X input               [INP]
+	X time                [TIME]
+	X math                [M]
+	- graphics            [GFX]
+		X gpu
+		X shader
+		X image
+		X texture
+		X font
+		- camera
+		- renderer 2d (for ui only)
+			X rect
+			X texture
+			- text
+				- effects
+		- renderer 3d
+			- circle
+			- triangle
+			- rect
+			- texture
+			- billboard
+			- post-processing effects
+	- audio               [AUD]
+		- 3d
+	- particle            [PART]
+	X scene               [SCN]
+	- viewport            [VPRT]
+	- asset               [ASST]
+	- state machine??     [STMC]
+	- ui                  [UI]
+	- level               [LVL]
+	- entity              [ENT]
+
+# level editor
+	- tile
+		- place
+		- remove
+		- select
+			- move
+			- deselect
+		- properties (height, is it wall/door?, tag link)
+	- object
+		- place
+		- remove
+		- select
+			- move
+			- deselect
+		- properties (custom properties??)
+		NOTE: ex object: switch, enemy spawner, gun, health
+	- tool
+		- select
+		- brush
+		- eraser
+	- undo/redo ??
+	- save level   (json format)
+	- load level   (json format)
+	- export level (into raw binary that don't need any processing when load)
+
+- pack texture into atlas??

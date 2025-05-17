@@ -1,0 +1,10 @@
+package game
+
+DEV_BUILD :: #config(DEV_BUILD, true)
+
+WINDOW_TITLE :: "Brainrot Shooter"
+WINDOW_WIDTH :: 1280
+WINDOW_HEIGHT :: 720
+
+TICKS_PER_SECOND :: 60
+SECONDS_PER_TICK :: 1.0/TICKS_PER_SECOND
