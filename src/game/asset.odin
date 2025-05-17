@@ -8,6 +8,7 @@ import "core:hash/xxhash"
 import "core:math/rand"
 import "core:encoding/json"
 
+/*
 ASST_Handle :: struct {
 	index: int,
 	generation: int,
@@ -238,3 +239,4 @@ ASST__get_from_storage :: proc() {
 	// TODO: implementation
 	assert(false)
 }
+*/

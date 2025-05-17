@@ -2,8 +2,8 @@
 	"$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
 	"collections": [
 		{
-			"name": "third_party",
-			"path": "third_party"
+			"name": "lib",
+			"path": "lib"
 		}
 	],
 	"enable_format": false,

@@ -4,24 +4,14 @@
 	X time                [TIME]
 	X math                [M]
 	- graphics            [GFX]
-		X gpu
-		X shader
 		X image
-		X texture
-		X font
+		- font
 		- camera
-		- renderer 2d (for ui only)
+		- generic renderer 2d (for ui only)
 			X rect
 			X texture
 			- text
 				- effects
-		- renderer 3d
-			- circle
-			- triangle
-			- rect
-			- texture
-			- billboard
-			- post-processing effects
 	- audio               [AUD]
 		- 3d
 	- particle            [PART]

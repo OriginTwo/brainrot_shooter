@@ -4,6 +4,8 @@ import "core:log"
 
 import sdl "vendor:sdl3"
 
+import "lib:imgui/imgui_impl_sdl3"
+
 WND_create :: proc(
 	title: cstring,
 	size: [2]i32,
@@ -16,23 +18,36 @@ WND_create :: proc(
 
 	WND__ctx.window = sdl.CreateWindow(title, size.x, size.y, {.OPENGL} + flags)
 	if WND__ctx.window == nil {
-		sdl.Quit()
 		log.fatalf("WND: failed to create window: %s", sdl.GetError())
 	}
 
 	sdl.SetWindowPosition(WND__ctx.window, pos.x, pos.y)
 
-	WND__ctx.width = int(size.x)
-	WND__ctx.height = int(size.y)
+	sdl.GL_SetAttribute(.CONTEXT_PROFILE_MASK, i32(sdl.GL_CONTEXT_PROFILE_CORE))
+	sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, 4)
+	sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, 3)
+	WND__ctx.gl_ctx = sdl.GL_CreateContext(WND__ctx.window)
+	if WND__ctx.gl_ctx == nil {
+		log.fatalf("WND: failed to create opengl context: %s", sdl.GetError())
+	}
+
+	sdl.GL_MakeCurrent(WND__ctx.window, WND__ctx.gl_ctx)
+	sdl.GL_SetSwapInterval(1)
 }
 
 WND_destroy :: proc() {
+	sdl.GL_DestroyContext(WND__ctx.gl_ctx)
 	sdl.DestroyWindow(WND__ctx.window)
 	sdl.Quit()
+	WND__ctx = {}
 }
 
 WND_get_handle :: #force_inline proc() -> ^sdl.Window {
 	return WND__ctx.window
+}
+
+WND_get_gl :: #force_inline proc() -> sdl.GLContext {
+	return WND__ctx.gl_ctx
 }
 
 WND_should_close :: #force_inline proc() -> bool {
@@ -44,13 +59,13 @@ WND_set_should_close :: #force_inline proc(val: bool) {
 }
 
 WND_handle_event :: proc(ev: ^sdl.Event) {
+	when DEV_BUILD {
+		imgui_impl_sdl3.ProcessEvent(ev)
+	}
+
 	#partial switch ev.type {
 	case .QUIT:
 		WND__ctx.should_quit = true
-
-	case .WINDOW_RESIZED:
-		WND__ctx.width = int(ev.window.data1)
-		WND__ctx.height = int(ev.window.data2)
 	}
 }
 
@@ -59,7 +74,6 @@ WND_handle_event :: proc(ev: ^sdl.Event) {
 @(private="file")
 WND__ctx: struct {
 	window: ^sdl.Window,
+	gl_ctx: sdl.GLContext,
 	should_quit: bool,
-	width: int,
-	height: int,
 }

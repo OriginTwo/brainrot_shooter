@@ -3,20 +3,45 @@ package game
 import "core:fmt"
 import "core:math"
 
+import im "lib:imgui"
+import sg "lib:sokol/gfx"
+
 SCN_GAME_HANDLE :: SCN_Handle(#hash("game", "fnv64a"))
 SCN_GAME_CALLBACKS :: SCN_Callbacks{scn_game_init, scn_game_uninit, scn_game_tick, scn_game_draw}
 
 @(private="file")
 _ctx: struct {
-	ren: GFX_Renderer_2D,
-	tex: GFX_Texture,
+	ren: GFX_2D_Renderer,
+	tex: sg.Image,
+	smp: sg.Sampler,
 
 	// e: PART_Handle,
 }
 
 scn_game_init :: proc() {
-	GFX_create_renderer_2d(&_ctx.ren, 1280, 720)
-	GFX_load_texture_from_file(&_ctx.tex, "res/image/sketch.png")
+	GFX_create_2d_renderer(&_ctx.ren, 1280, 720)
+	{
+		img: GFX_Image
+		GFX_load_image_from_file(&img, "res/image/sketch.png")
+		_ctx.tex = sg.make_image({
+			type = ._2D,
+			width = i32(img.width),
+			height = i32(img.height),
+			num_slices = 1,
+			num_mipmaps = 1,
+			usage = .IMMUTABLE,
+			pixel_format = .RGBA8,
+			sample_count = 1,
+			data = {
+				subimage = {0 = {0 = {
+					ptr = raw_data(img.pixels),
+					size = len(img.pixels)*size_of(img.pixels[0]),
+				}}},
+			},
+		})
+		_ctx.smp = GFX_get_default_2d_sampler(_ctx.ren)
+		GFX_unload_image(&img)
+	}
 
 	// _ctx.e = PART_emitter_create({
 	// 	particle_count = 24,
@@ -79,8 +104,8 @@ scn_game_uninit :: proc() {
 	// PART_emitter_destroy(_ctx.e)
 	// PART_destroy_all()
 
-	GFX_unload_texture(&_ctx.tex)
-	GFX_destroy_renderer_2d(&_ctx.ren)
+	sg.destroy_image(_ctx.tex)
+	GFX_destroy_2d_renderer(&_ctx.ren)
 }
 
 mpos: M_Vec2f32
@@ -104,7 +129,7 @@ scn_game_draw :: proc(alpha: f32) {
 	// PART_draw(alpha)
 
 	GFX_begin_frame()
-	GFX_begin_renderer_2d(&_ctx.ren)
+	GFX_begin_2d_renderer(&_ctx.ren)
 
 	GFX_draw_2d_triangle(
 		&_ctx.ren,
@@ -113,7 +138,7 @@ scn_game_draw :: proc(alpha: f32) {
 		{300.0, 500.0}, {0, 0, 255, 255},
 	)
 
-	GFX_set_renderer_2d_layer(&_ctx.ren, 1.0)
+	// GFX_set_renderer_2d_layer(&_ctx.ren, 1.0)
 
 	// GFX_draw_2d_rect(
 	// 	&_ctx.ren,
@@ -121,14 +146,29 @@ scn_game_draw :: proc(alpha: f32) {
 	// 	M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
 	// )
 
+	tex_width := f32(sg.query_image_width(_ctx.tex))
+	tex_height := f32(sg.query_image_height(_ctx.tex))
+
 	GFX_draw_2d_texture(
 		&_ctx.ren,
 		_ctx.tex,
-		{0.0, 0.0, f32(_ctx.tex.width), f32(_ctx.tex.height)},
+		_ctx.smp,
+		{0.0, 0.0, tex_width, tex_height},
 		{mpos.x, mpos.y, 500.0, 500.0},
 		M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
 	)
 
-	GFX_end_renderer_2d(&_ctx.ren)
+	GFX_end_2d_renderer(&_ctx.ren)
+
+	im.ShowDemoWindow(nil)
+
+	if im.Begin("Window containing a quit button") {
+		if im.Button("The quit button in question") {
+		}
+	}
+	im.End()
+
 	GFX_end_frame()
+
+	sg.commit()
 }
