@@ -11,8 +11,8 @@
 			X rect
 			X texture
 			X text
-	- audio               [AUD]
-		- 3d
+	X audio               [AUD]
+		X 3d
 	- particle            [PART]
 	X scene               [SCN]
 	- viewport            [VPRT]

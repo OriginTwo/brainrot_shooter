@@ -51,6 +51,7 @@ AUD_init :: proc() {
 		config := ma.engine_config_init()
 		config.pResourceManager = &AUD__ctx.resman
 		config.pDevice = &AUD__ctx.device
+		config.listenerCount = 1
 		result := ma.engine_init(&config, &AUD__ctx.engine)
 		if result != .SUCCESS {
 			ma.resource_manager_uninit(&AUD__ctx.resman)
