@@ -224,6 +224,10 @@ GFX_load_font_from_image :: proc(font: ^GFX_Font, image: GFX_Image) {
 			usage = .IMMUTABLE,
 			pixel_format = .RGBA8,
 			sample_count = 1,
+			data = {subimage = {0 = {0 = {
+				ptr = raw_data(img_copy.pixels),
+				size = len(img_copy.pixels)*size_of(img_copy.pixels[0]),
+			}}}},
 		})
 		font.sampler = sg.make_sampler({
 			min_filter = .NEAREST,
@@ -316,10 +320,6 @@ GFX_2D_Renderer :: struct {
 
 	layer: int,
 }
-
-// GFX_Text :: struct {
-// 	chunks: []GFX__Text_Chunk,
-// }
 
 GFX_create_2d_renderer :: proc(
 	ren: ^GFX_2D_Renderer,
@@ -664,9 +664,33 @@ GFX_draw_2d_texture :: proc(
 	ren.num_indices += 6
 }
 
-// GFX_create_text :: proc(text: ^GFX_Text, encoded_text: string) {
-// 	// #assert(false, "IMPLEMENTATION")
-// }
+GFX_draw_2d_string :: proc(
+	ren: ^GFX_2D_Renderer,
+	font: GFX_Font,
+	str: string,
+	pos: M_Vec2f32,
+	color: M_Color,
+	scale: f32,
+) {
+	x := pos.x
+	y := pos.y
+
+	for i in 0..<len(str) {
+		ch := str[i]
+		src := font.sources[ch - 32]
+		info := font.glyphs[ch - 32]
+
+		dst := M_Rect{
+			x + info.offset_x*scale,
+			y + info.offset_y*scale,
+			src.width*scale,
+			src.height*scale,
+		}
+
+		GFX_draw_2d_texture(ren, font.texture, font.sampler, src, dst, color)
+		x += info.advance_x*scale
+	}
+}
 
 
 
@@ -681,17 +705,6 @@ GFX__2D_Batch :: struct {
 	sampler: sg.Sampler,
 	layer: int,
 }
-
-// @(private="file")
-// GFX__Text_Chunk :: struct {
-// 	options: GFX__Text_Chunk_Options,
-// 	text: string,
-// }
-
-// @(private="file")
-// GFX__Text_Chunk_Options :: struct {
-// 	color: M_Color,
-// }
 
 @(private="file")
 GFX__new_2d_batch_if_needed :: proc(ren: ^GFX_2D_Renderer, tex: sg.Image, smp: sg.Sampler) {

@@ -12,6 +12,7 @@ SCN_GAME_CALLBACKS :: SCN_Callbacks{scn_game_init, scn_game_uninit, scn_game_tic
 @(private="file")
 _ctx: struct {
 	ren: GFX_2D_Renderer,
+	font: GFX_Font,
 	tex: sg.Image,
 	smp: sg.Sampler,
 
@@ -20,6 +21,14 @@ _ctx: struct {
 
 scn_game_init :: proc() {
 	GFX_create_2d_renderer(&_ctx.ren, 1280, 720)
+
+	{
+		img: GFX_Image
+		GFX_load_image_from_file(&img, "res/font/font_big.png")
+		GFX_load_font_from_image(&_ctx.font, img)
+		GFX_unload_image(&img)
+	}
+
 	{
 		img: GFX_Image
 		GFX_load_image_from_file(&img, "res/image/sketch.png")
@@ -105,6 +114,7 @@ scn_game_uninit :: proc() {
 	// PART_destroy_all()
 
 	sg.destroy_image(_ctx.tex)
+	GFX_unload_font(&_ctx.font)
 	GFX_destroy_2d_renderer(&_ctx.ren)
 }
 
@@ -158,6 +168,17 @@ scn_game_draw :: proc(alpha: f32) {
 	// 	{mpos.x, mpos.y, 500.0, 500.0},
 	// 	M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
 	// )
+
+	GFX_set_2d_layer(&_ctx.ren, 10)
+
+	GFX_draw_2d_string(
+		&_ctx.ren,
+		_ctx.font,
+		"Hello World!",
+		{200.0, 200.0},
+		M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, 1.0})),
+		3.0,
+	)
 
 	GFX_end_2d_renderer(&_ctx.ren)
 

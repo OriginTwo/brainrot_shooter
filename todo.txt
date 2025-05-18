@@ -7,17 +7,16 @@
 		X image
 		- font
 		- camera
-		- generic renderer 2d (for ui only)
+		X generic 2d renderer (for ui only)
 			X rect
 			X texture
-			- text
-				- effects
+			X text
 	- audio               [AUD]
 		- 3d
 	- particle            [PART]
 	X scene               [SCN]
 	- viewport            [VPRT]
-	- asset               [ASST]
+	- asset               [ASST] // TODO: maybe rename to resource [RES]??
 	- state machine??     [STMC]
 	- ui                  [UI]
 	- level               [LVL]
