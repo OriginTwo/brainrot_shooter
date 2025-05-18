@@ -3,10 +3,10 @@
 	X input               [INP]
 	X time                [TIME]
 	X math                [M]
-	- graphics            [GFX]
+	X graphics            [GFX]
 		X image
-		- font
-		- camera
+		X font
+		X camera
 		X generic 2d renderer (for ui only)
 			X rect
 			X texture
