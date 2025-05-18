@@ -138,25 +138,26 @@ scn_game_draw :: proc(alpha: f32) {
 		{300.0, 500.0}, {0, 0, 255, 255},
 	)
 
-	// GFX_set_renderer_2d_layer(&_ctx.ren, 1.0)
+	GFX_set_2d_layer(&_ctx.ren, -1)
 
-	// GFX_draw_2d_rect(
+	GFX_draw_2d_rect(
+		&_ctx.ren,
+		{mpos.x, mpos.y, 150.0, 200.0},
+		// M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
+		M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, 1.0})),
+	)
+
+	// tex_width := f32(sg.query_image_width(_ctx.tex))
+	// tex_height := f32(sg.query_image_height(_ctx.tex))
+
+	// GFX_draw_2d_texture(
 	// 	&_ctx.ren,
-	// 	{mpos.x, mpos.y, 150.0, 200.0},
+	// 	_ctx.tex,
+	// 	_ctx.smp,
+	// 	{0.0, 0.0, tex_width, tex_height},
+	// 	{mpos.x, mpos.y, 500.0, 500.0},
 	// 	M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
 	// )
-
-	tex_width := f32(sg.query_image_width(_ctx.tex))
-	tex_height := f32(sg.query_image_height(_ctx.tex))
-
-	GFX_draw_2d_texture(
-		&_ctx.ren,
-		_ctx.tex,
-		_ctx.smp,
-		{0.0, 0.0, tex_width, tex_height},
-		{mpos.x, mpos.y, 500.0, 500.0},
-		M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
-	)
 
 	GFX_end_2d_renderer(&_ctx.ren)
 

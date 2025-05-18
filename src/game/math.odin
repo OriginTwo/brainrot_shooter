@@ -86,7 +86,7 @@ M_frgba_from_hsva :: proc(hsva: M_FColor) -> M_FColor {
 	switch hue {
 	case 0.0..<60.0, 360.0:
 		r = c
-		b = x
+		g = x
 		b = 0.0
 	case 60.0..<120.0:
 		r = x
