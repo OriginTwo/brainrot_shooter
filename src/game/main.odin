@@ -71,6 +71,9 @@ main :: proc() {
 
 		// handle events
 		{
+			frame_input_state.mouse_delta = {}
+			frame_input_state.mouse_wheel = {}
+
 			ev: sdl.Event
 			for sdl.PollEvent(&ev) {
 				WND_handle_event(&ev)

@@ -40,9 +40,6 @@ INP_copy :: proc(dst: ^INP_State, src: INP_State) {
 }
 
 INP_handle_event :: proc(state: ^INP_State, ev: ^sdl.Event) {
-	state.mouse_delta = {}
-	state.mouse_wheel = {}
-
 	#partial switch ev.type {
 	case .KEY_DOWN, .KEY_UP:
 		state.curr_key_down[ev.key.scancode] = ev.key.down
