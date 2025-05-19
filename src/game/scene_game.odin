@@ -2,6 +2,9 @@ package game
 
 import "core:fmt"
 import "core:math"
+import "core:math/linalg"
+
+import sdl "vendor:sdl3"
 
 import im "lib:imgui"
 import sg "lib:sokol/gfx"
@@ -11,16 +14,20 @@ SCN_GAME_CALLBACKS :: SCN_Callbacks{scn_game_init, scn_game_uninit, scn_game_tic
 
 @(private="file")
 _ctx: struct {
-	ren: GFX_2D_Renderer,
+	ren2d: GFX_2D_Renderer,
+	ren3d: GFX_3D_Renderer,
 	font: GFX_Font,
 	tex: sg.Image,
 	smp: sg.Sampler,
+
+	cam: GFX_Camera,
 
 	// e: PART_Handle,
 }
 
 scn_game_init :: proc() {
-	GFX_create_2d_renderer(&_ctx.ren, 1280, 720)
+	GFX_create_2d_renderer(&_ctx.ren2d)
+	GFX_create_3d_renderer(&_ctx.ren3d, 1280, 720)
 
 	{
 		img: GFX_Image
@@ -31,7 +38,7 @@ scn_game_init :: proc() {
 
 	{
 		img: GFX_Image
-		GFX_load_image_from_file(&img, "res/image/sketch.png")
+		GFX_load_image_from_file(&img, "res/image/HBD_2021.png")
 		_ctx.tex = sg.make_image({
 			type = ._2D,
 			width = i32(img.width),
@@ -48,9 +55,11 @@ scn_game_init :: proc() {
 				}}},
 			},
 		})
-		_ctx.smp = GFX_get_default_2d_sampler(_ctx.ren)
+		_ctx.smp = GFX_get_default_2d_sampler(_ctx.ren2d)
 		GFX_unload_image(&img)
 	}
+
+	_ctx.cam.fovy = math.PI/4.0
 
 	// _ctx.e = PART_emitter_create({
 	// 	particle_count = 24,
@@ -115,7 +124,8 @@ scn_game_uninit :: proc() {
 
 	sg.destroy_image(_ctx.tex)
 	GFX_unload_font(&_ctx.font)
-	GFX_destroy_2d_renderer(&_ctx.ren)
+	GFX_destroy_2d_renderer(&_ctx.ren2d)
+	GFX_destroy_3d_renderer(&_ctx.ren3d)
 }
 
 mpos: M_Vec2f32
@@ -132,6 +142,38 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 		WND_set_should_close(true)
 	}
 
+	if INP_is_key_pressed(input, .TAB) {
+		@(static) lock_mouse := false
+		lock_mouse = !lock_mouse
+		window := WND_get_handle()
+		win_width: i32
+		win_height: i32
+		sdl.GetWindowSize(window, &win_width, &win_height)
+		_ = sdl.SetWindowRelativeMouseMode(window, lock_mouse)
+		sdl.WarpMouseInWindow(window, f32(win_width/2), f32(win_height/2))
+	}
+
+	mdelta := INP_get_mouse_delta(input)
+
+	MOUSE_SENS :: 0.05
+	_ctx.cam.pitch += mdelta.y*MOUSE_SENS
+	_ctx.cam.yaw += mdelta.x*MOUSE_SENS
+
+	_ctx.cam.pitch = clamp(_ctx.cam.pitch, -89.0, 89.0)
+	_ctx.cam.yaw = math.mod(_ctx.cam.yaw, 360.0)
+
+	mat := GFX_get_camera_matrix(_ctx.cam)
+	forward := M_Vec3f32{mat[2, 0], mat[1, 0], mat[0, 0]}
+	right := M_Vec3f32{mat[2, 2], mat[1, 2], mat[0, 2]}
+	mov_vec: M_Vec3f32
+	if INP_is_key_down(input, .W) {mov_vec -= forward}
+	if INP_is_key_down(input, .S) {mov_vec += forward}
+	if INP_is_key_down(input, .D) {mov_vec += right}
+	if INP_is_key_down(input, .A) {mov_vec -= right}
+	mov_vec = linalg.normalize0(mov_vec)
+	mov_vec *= 5.0*delta
+	_ctx.cam.position += mov_vec
+
 	// PART_tick(delta)
 }
 
@@ -139,29 +181,42 @@ scn_game_draw :: proc(alpha: f32) {
 	// PART_draw(alpha)
 
 	GFX_begin_frame()
-	GFX_begin_2d_renderer(&_ctx.ren)
+	GFX_clear_background(M_FCOLOR_BLACK)
 
-	GFX_draw_2d_triangle(
-		&_ctx.ren,
-		{100.0, 100.0}, {255, 0, 0, 255},
-		{600.0, 200.0}, {0, 255, 0, 255},
-		{300.0, 500.0}, {0, 0, 255, 255},
+	GFX_begin_3d_renderer(&_ctx.ren3d)
+
+	GFX_draw_3d_triangle(
+		&_ctx.ren3d,
+		{ 0.0,  1.0, -5.0}, {0.0, 0.0, 0.0}, {255, 0, 0, 255},
+		{-1.0, -1.0, -5.0}, {0.0, 0.0, 0.0}, {0, 255, 0, 255},
+		{ 1.0, -1.0, -5.0}, {0.0, 0.0, 0.0}, {0, 0, 255, 255},
 	)
 
-	GFX_set_2d_layer(&_ctx.ren, -1)
+	GFX_end_3d_renderer(&_ctx.ren3d, _ctx.cam)
 
-	GFX_draw_2d_rect(
-		&_ctx.ren,
-		{mpos.x, mpos.y, 150.0, 200.0},
-		// M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
-		M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, 1.0})),
-	)
+	GFX_begin_2d_renderer(&_ctx.ren2d)
+
+	// GFX_draw_2d_triangle(
+	// 	&_ctx.ren2d,
+	// 	{100.0, 100.0}, {255, 0, 0, 255},
+	// 	{600.0, 200.0}, {0, 255, 0, 255},
+	// 	{300.0, 500.0}, {0, 0, 255, 255},
+	// )
+
+	// GFX_set_2d_layer(&_ctx.ren2d, -1)
+
+	// GFX_draw_2d_rect(
+	// 	&_ctx.ren2d,
+	// 	{mpos.x, mpos.y, 150.0, 200.0},
+	// 	// M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
+	// 	M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, 1.0})),
+	// )
 
 	// tex_width := f32(sg.query_image_width(_ctx.tex))
 	// tex_height := f32(sg.query_image_height(_ctx.tex))
 
 	// GFX_draw_2d_texture(
-	// 	&_ctx.ren,
+	// 	&_ctx.ren2d,
 	// 	_ctx.tex,
 	// 	_ctx.smp,
 	// 	{0.0, 0.0, tex_width, tex_height},
@@ -169,10 +224,10 @@ scn_game_draw :: proc(alpha: f32) {
 	// 	M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
 	// )
 
-	GFX_set_2d_layer(&_ctx.ren, 10)
+	GFX_set_2d_layer(&_ctx.ren2d, 10)
 
 	GFX_draw_2d_string(
-		&_ctx.ren,
+		&_ctx.ren2d,
 		_ctx.font,
 		"Hello World!",
 		{200.0, 200.0},
@@ -180,13 +235,18 @@ scn_game_draw :: proc(alpha: f32) {
 		3.0,
 	)
 
-	GFX_end_2d_renderer(&_ctx.ren)
+	GFX_end_2d_renderer(&_ctx.ren2d)
 
-	im.ShowDemoWindow(nil)
+	// im.ShowDemoWindow(nil)
 
-	if im.Begin("Window containing a quit button") {
-		if im.Button("The quit button in question") {
-		}
+	im.SetNextWindowSize({200, 400})
+	if im.Begin("Debug") {
+		im.SliderFloat("pos_x", &_ctx.cam.position.x, -10.0, 10.0)
+		im.SliderFloat("pos_y", &_ctx.cam.position.y, -10.0, 10.0)
+		im.SliderFloat("pos_z", &_ctx.cam.position.z, -10.0, 10.0)
+		im.SliderFloat("pitch", &_ctx.cam.pitch, -89.0, 89.0)
+		im.SliderFloat("yaw", &_ctx.cam.yaw, 0.0, 360.0)
+		im.SliderFloat("roll", &_ctx.cam.roll, 0.0, 360.0)
 	}
 	im.End()
 

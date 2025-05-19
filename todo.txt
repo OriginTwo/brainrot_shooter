@@ -11,6 +11,20 @@
 			X rect
 			X texture
 			X text
+		- 3d renderer
+			- triangle
+				X normal
+				- billboard
+			- rect
+				- normal
+				- billboard
+			- texture
+				- normal
+				- billboard
+			- fog
+			- lighting
+			- post-processing effects
+			- shadow??
 	X audio               [AUD]
 		X 3d
 	- particle            [PART]

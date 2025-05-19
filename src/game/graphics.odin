@@ -106,6 +106,23 @@ GFX_get_swapchain :: proc() -> sg.Swapchain {
 	}
 }
 
+GFX_clear_background :: proc(clear_color: M_FColor) {
+	sg.begin_pass({
+		action = {
+			colors = {0 = {
+				load_action = .CLEAR,
+				clear_value = transmute(sg.Color)clear_color,
+			}},
+			depth = {
+				load_action = .CLEAR,
+				clear_value = 1.0,
+			},
+		},
+		swapchain = GFX_get_swapchain(),
+	})
+	sg.end_pass()
+}
+
 
 ///////////////////////////////////////////////////////////
 // IMAGE
@@ -294,37 +311,52 @@ GFX_unload_font :: proc(font: ^GFX_Font) {
 GFX_Camera :: struct {
 	position: M_Vec3f32,
 	offset: M_Vec3f32,  // for head bobbing
-	pitch: f32,
 	yaw: f32,
+	pitch: f32,
 	roll: f32,
+	fovy: f32,
 }
 
 GFX_get_camera_matrix :: proc(cam: GFX_Camera) -> linalg.Matrix4f32 {
-	cp := math.cos(cam.pitch)
-	sp := math.sin(cam.pitch)
-	cy := math.cos(cam.yaw)
-	sy := math.sin(cam.yaw)
-	cr := math.cos(cam.roll)
-	sr := math.sin(cam.roll)
+	cy := math.cos(cam.yaw*math.RAD_PER_DEG)
+	sy := math.sin(cam.yaw*math.RAD_PER_DEG)
+	cp := math.cos(cam.pitch*math.RAD_PER_DEG)
+	sp := math.sin(cam.pitch*math.RAD_PER_DEG)
+	cr := math.cos(cam.roll*math.RAD_PER_DEG)
+	sr := math.sin(cam.roll*math.RAD_PER_DEG)
 
 	pos := cam.position + cam.offset
 
+	// // https://en.wikipedia.org/wiki/Rotation_matrix#General_3D_rotations
+	// // extrinsics rotation
+
+	// mat := linalg.MATRIX4F32_IDENTITY
+
+	// // rotation
+	// mat[0, 0] = cy*cr
+	// mat[0, 1] = sp*sy*cr - cp*sr
+	// mat[0, 2] = cp*sy*cr + sp*sr
+	// mat[1, 0] = cy*sr
+	// mat[1, 1] = sp*sy*sr + cp*cr
+	// mat[1, 2] = cp*sy*sr - sp*cr
+	// mat[2, 0] = -sy
+	// mat[2, 1] = sp*cy
+	// mat[2, 2] = cp*cy
+
+	// // translation
+	// forward := M_Vec3f32{mat[0, 2], mat[1, 2], mat[2, 2]}
+	// right := M_Vec3f32{mat[0, 0], mat[1, 0], mat[2, 0]}
+	// up := M_Vec3f32{mat[0, 1], mat[1, 1], mat[2, 1]}
+
+	// mat[0, 3] = -linalg.dot(right, cam.position)
+	// mat[1, 3] = -linalg.dot(up, cam.position)
+	// mat[2, 3] = -linalg.dot(forward, cam.position)
+
 	mat := linalg.MATRIX4F32_IDENTITY
-
-	mat[0, 0] = cy*cp
-	mat[0, 1] = cy*sp*sr - sy*cr
-	mat[0, 2] = cy*sp*cr + sy*sr
-	mat[0, 3] = pos.x
-
-	mat[1, 0] = sy*cp
-	mat[1, 1] = sy*sp*sr + cy*cr
-	mat[1, 2] = sy*sp*cr - cy*sr
-	mat[1, 3] = pos.y
-
-	mat[2, 0] = -sp
-	mat[2, 1] = cp*sr
-	mat[2, 2] = cp*cr
-	mat[2, 3] = pos.z
+	mat *= linalg.matrix4_rotate_f32(cam.pitch*math.RAD_PER_DEG, {1.0, 0.0, 0.0})
+	mat *= linalg.matrix4_rotate_f32(cam.yaw*math.RAD_PER_DEG, {0.0, 1.0, 0.0})
+	mat *= linalg.matrix4_rotate_f32(cam.roll*math.RAD_PER_DEG, {0.0, 0.0, 1.0})
+	mat *= linalg.matrix4_translate_f32(-cam.position)
 
 	return mat
 }
@@ -399,21 +431,21 @@ GFX_create_2d_renderer :: proc(
 			shader = ren.shader,
 			layout = {
 				buffers = {
-					0 = {stride = size_of(M_Vec2f32)},
-					1 = {stride = size_of(M_Vec2f32)},
-					2 = {stride = size_of(M_FColor)},
+					shader.ATTR_generic_2d_generic_2d_A_position = {stride = size_of(M_Vec2f32)},
+					shader.ATTR_generic_2d_generic_2d_A_uv = {stride = size_of(M_Vec2f32)},
+					shader.ATTR_generic_2d_generic_2d_A_color = {stride = size_of(M_FColor)},
 				},
 				attrs = {
-					shader.ATTR_generic_2d_A_position = {
-						buffer_index = shader.ATTR_generic_2d_A_position,
+					shader.ATTR_generic_2d_generic_2d_A_position = {
+						buffer_index = shader.ATTR_generic_2d_generic_2d_A_position,
 						format = .FLOAT2,
 					},
-					shader.ATTR_generic_2d_A_uv = {
-						buffer_index = shader.ATTR_generic_2d_A_uv,
+					shader.ATTR_generic_2d_generic_2d_A_uv = {
+						buffer_index = shader.ATTR_generic_2d_generic_2d_A_uv,
 						format = .FLOAT2,
 					},
-					shader.ATTR_generic_2d_A_color = {
-						buffer_index = shader.ATTR_generic_2d_A_color,
+					shader.ATTR_generic_2d_generic_2d_A_color = {
+						buffer_index = shader.ATTR_generic_2d_generic_2d_A_color,
 						format = .FLOAT4,
 					},
 				},
@@ -489,18 +521,8 @@ GFX_begin_2d_renderer :: proc(ren: ^GFX_2D_Renderer) {
 	ren.num_vertices = 0
 	ren.num_indices = 0
 	ren.num_batches = 0
-	mem.set(raw_data(ren.batches), 0xff, len(ren.batches)*size_of(ren.batches[0]))
+	ren.batches[0] = {}
 	ren.layer = 0
-
-	// clear background
-	sg.begin_pass({
-		action = {colors = {0 = {
-			load_action = .CLEAR,
-			clear_value = {0.0, 0.0, 0.0, 1.0},
-		}}},
-		swapchain = GFX_get_swapchain(),
-	})
-	sg.end_pass()
 }
 
 GFX_end_2d_renderer :: proc(ren: ^GFX_2D_Renderer) {
@@ -514,19 +536,19 @@ GFX_end_2d_renderer :: proc(ren: ^GFX_2D_Renderer) {
 
 	sg.update_buffer(
 		ren.vertex_pos_buffer,
-		{raw_data(ren.vertex_positions), uint(ren.num_vertices)*size_of(M_Vec2f32)},
+		{raw_data(ren.vertex_positions), uint(ren.num_vertices)*size_of(ren.vertex_positions[0])},
 	)
 	sg.update_buffer(
 		ren.vertex_uv_buffer,
-		{raw_data(ren.vertex_uvs), uint(ren.num_vertices)*size_of(M_Vec2f32)},
+		{raw_data(ren.vertex_uvs), uint(ren.num_vertices)*size_of(ren.vertex_uvs[0])},
 	)
 	sg.update_buffer(
 		ren.vertex_color_buffer,
-		{raw_data(ren.vertex_colors), uint(ren.num_vertices)*size_of(M_FColor)},
+		{raw_data(ren.vertex_colors), uint(ren.num_vertices)*size_of(ren.vertex_colors[0])},
 	)
 	sg.update_buffer(
 		ren.index_buffer,
-		{raw_data(ren.indices), uint(ren.num_indices)*size_of(GFX__2D_Index)},
+		{raw_data(ren.indices), uint(ren.num_indices)*size_of(ren.indices[0])},
 	)
 
 	sg.begin_pass({
@@ -552,18 +574,18 @@ GFX_end_2d_renderer :: proc(ren: ^GFX_2D_Renderer) {
 	for batch in batches {
 		sg.apply_bindings({
 			vertex_buffers = {
-				0 = ren.vertex_pos_buffer,
-				1 = ren.vertex_uv_buffer,
-				2 = ren.vertex_color_buffer,
+				shader.ATTR_generic_2d_generic_2d_A_position = ren.vertex_pos_buffer,
+				shader.ATTR_generic_2d_generic_2d_A_uv = ren.vertex_uv_buffer,
+				shader.ATTR_generic_2d_generic_2d_A_color = ren.vertex_color_buffer,
 			},
 			index_buffer = ren.index_buffer,
-			images = {shader.IMG_U_texture = batch.texture},
-			samplers = {shader.SMP_U_sampler = batch.sampler},
+			images = {shader.IMG_generic_2d_U_texture = batch.texture},
+			samplers = {shader.SMP_generic_2d_U_sampler = batch.sampler},
 		})
-		uniform := shader.Vertex_Param{
+		uniform := shader.Generic_2d_Vertex_Param{
 			proj = linalg.matrix_flatten(proj),
 		}
-		sg.apply_uniforms(shader.UB_Vertex_Param, {&uniform, size_of(uniform)})
+		sg.apply_uniforms(shader.UB_generic_2d_Vertex_Param, {&uniform, size_of(uniform)})
 		sg.draw(batch.first_index, batch.num_indices, 1)
 	}
 
@@ -756,3 +778,488 @@ GFX__new_2d_batch_if_needed :: proc(ren: ^GFX_2D_Renderer, tex: sg.Image, smp: s
 		curr_batch.layer = ren.layer
 	}
 }
+
+
+///////////////////////////////////////////////////////////
+// 3D RENDERER
+///////////////////////////////////////////////////////////
+GFX_3D_Renderer :: struct {
+	vertex_pos_buffer: sg.Buffer,
+	vertex_normal_buffer: sg.Buffer,
+	vertex_uv_buffer: sg.Buffer,
+	vertex_color_buffer: sg.Buffer,
+	index_buffer: sg.Buffer,
+	shader: sg.Shader,
+	normal_pipeline: sg.Pipeline,
+	decal_pipeline: sg.Pipeline,
+	depth_texture: sg.Image,
+	attachments: sg.Attachments,
+
+	white_texture: sg.Image,
+	default_sampler: sg.Sampler,
+
+	num_vertices: u32,
+	vertex_positions: []M_Vec3f32,
+	vertex_normals: []M_Vec3f32,
+	vertex_uvs: []M_Vec2f32,
+	vertex_colors: []M_FColor,
+
+	num_indices: u32,
+	indices: []GFX__3D_Index,
+
+	num_batches: int,
+	batches: []GFX__3D_Batch,
+}
+
+GFX_create_3d_renderer :: proc(
+	ren: ^GFX_3D_Renderer,
+	width: int,
+	height: int,
+	max_vertex: uint = 32000,
+	max_index: uint = 48000,
+	max_batch: uint = 128,
+) {
+	// buffers
+	{
+		ren.vertex_pos_buffer = sg.make_buffer({
+			size = max_vertex*size_of(M_Vec3f32),
+			type = .VERTEXBUFFER,
+			usage = .STREAM,
+		})
+
+		ren.vertex_normal_buffer = sg.make_buffer({
+			size = max_vertex*size_of(M_Vec3f32),
+			type = .VERTEXBUFFER,
+			usage = .STREAM,
+		})
+
+		ren.vertex_uv_buffer = sg.make_buffer({
+			size = max_vertex*size_of(M_Vec2f32),
+			type = .VERTEXBUFFER,
+			usage = .STREAM,
+		})
+
+		ren.vertex_color_buffer = sg.make_buffer({
+			size = max_vertex*size_of(M_FColor),
+			type = .VERTEXBUFFER,
+			usage = .STREAM,
+		})
+
+		ren.index_buffer = sg.make_buffer({
+			size = max_index*size_of(GFX__3D_Index),
+			type = .INDEXBUFFER,
+			usage = .STREAM,
+		})
+	}
+
+	// pipeline
+	{
+		ren.shader = sg.make_shader(shader.generic_3d_shader_desc(sg.query_backend()))
+
+		ren.normal_pipeline = sg.make_pipeline({
+			shader = ren.shader,
+			layout = {
+				buffers = {
+					0 = {stride = size_of(M_Vec3f32)},
+					1 = {stride = size_of(M_Vec3f32)},
+					2 = {stride = size_of(M_Vec2f32)},
+					3 = {stride = size_of(M_FColor)},
+				},
+				attrs = {
+					shader.ATTR_generic_3d_generic_3d_A_position = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_position,
+						format = .FLOAT3,
+					},
+					shader.ATTR_generic_3d_generic_3d_A_normal = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_normal,
+						format = .FLOAT3,
+					},
+					shader.ATTR_generic_3d_generic_3d_A_uv = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_uv,
+						format = .FLOAT2,
+					},
+					shader.ATTR_generic_3d_generic_3d_A_color = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_color,
+						format = .FLOAT4,
+					},
+				},
+			},
+			depth = {
+				pixel_format = .DEPTH,
+				compare = .LESS,
+				write_enabled = true,
+			},
+			color_count = 1,
+			colors = {0 = {blend = {
+				enabled = true,
+				src_factor_rgb = .SRC_ALPHA,
+				dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+				op_rgb = .ADD,
+			}}},
+			primitive_type = .TRIANGLES,
+			index_type = .UINT16 when size_of(GFX__3D_Index) == 2 else .UINT32,
+			sample_count = 1,
+		})
+
+		ren.decal_pipeline = sg.make_pipeline({
+			shader = ren.shader,
+			layout = {
+				buffers = {
+					shader.ATTR_generic_3d_generic_3d_A_position = {stride = size_of(M_Vec3f32)},
+					shader.ATTR_generic_3d_generic_3d_A_normal = {stride = size_of(M_Vec3f32)},
+					shader.ATTR_generic_3d_generic_3d_A_uv = {stride = size_of(M_Vec2f32)},
+					shader.ATTR_generic_3d_generic_3d_A_color = {stride = size_of(M_FColor)},
+				},
+				attrs = {
+					shader.ATTR_generic_3d_generic_3d_A_position = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_position,
+						format = .FLOAT3,
+					},
+					shader.ATTR_generic_3d_generic_3d_A_normal = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_normal,
+						format = .FLOAT3,
+					},
+					shader.ATTR_generic_3d_generic_3d_A_uv = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_uv,
+						format = .FLOAT2,
+					},
+					shader.ATTR_generic_3d_generic_3d_A_color = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_color,
+						format = .FLOAT4,
+					},
+				},
+			},
+			depth = {
+				pixel_format = .DEPTH,
+				compare = .LESS_EQUAL,
+				write_enabled = true,
+			},
+			color_count = 1,
+			colors = {0 = {blend = {
+				enabled = true,
+				src_factor_rgb = .SRC_ALPHA,
+				dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+				op_rgb = .ADD,
+			}}},
+			primitive_type = .TRIANGLES,
+			index_type = .UINT16 when size_of(GFX__3D_Index) == 2 else .UINT32,
+			sample_count = 1,
+		})
+	}
+
+	// depth texture
+	{
+		ren.depth_texture = sg.make_image({
+			render_target = true,
+			width = i32(width),
+			height = i32(height),
+			pixel_format = .DEPTH,
+			sample_count = 1,
+		})
+		ren.attachments = sg.make_attachments({
+			depth_stencil = {
+				image = ren.depth_texture,
+			},
+		})
+	}
+
+	// white texture
+	{
+		white: u32 = 0xffffffff
+		ren.white_texture = sg.make_image({
+			type = ._2D,
+			width = 1,
+			height = 1,
+			num_slices = 1,
+			num_mipmaps = 1,
+			usage = .IMMUTABLE,
+			pixel_format = .RGBA8,
+			sample_count = 1,
+			data = {
+				subimage = {0 = {0 = {
+					ptr = &white,
+					size = size_of(white),
+				}}},
+			},
+		})
+		ren.default_sampler = sg.make_sampler({
+			min_filter = .NEAREST,
+			mag_filter = .NEAREST,
+			wrap_u = .CLAMP_TO_EDGE,
+			wrap_v = .CLAMP_TO_EDGE,
+		})
+	}
+
+	ren.vertex_positions = make([]M_Vec3f32, max_vertex)
+	ren.vertex_normals = make([]M_Vec3f32, max_vertex)
+	ren.vertex_uvs = make([]M_Vec2f32, max_vertex)
+	ren.vertex_colors = make([]M_FColor, max_vertex)
+	ren.indices = make([]GFX__3D_Index, max_index)
+	ren.batches = make([]GFX__3D_Batch, max_batch)
+}
+
+GFX_destroy_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
+	sg.destroy_buffer(ren.vertex_pos_buffer)
+	sg.destroy_buffer(ren.vertex_uv_buffer)
+	sg.destroy_buffer(ren.vertex_color_buffer)
+	sg.destroy_buffer(ren.index_buffer)
+	sg.destroy_shader(ren.shader)
+	sg.destroy_pipeline(ren.normal_pipeline)
+	sg.destroy_pipeline(ren.decal_pipeline)
+	sg.destroy_image(ren.white_texture)
+	sg.destroy_sampler(ren.default_sampler)
+
+	delete(ren.vertex_positions)
+	delete(ren.vertex_normals)
+	delete(ren.vertex_uvs)
+	delete(ren.vertex_colors)
+	delete(ren.indices)
+	delete(ren.batches)
+
+	ren^ = {}
+}
+
+GFX_begin_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
+	ren.num_vertices = 0
+	ren.num_indices = 0
+	ren.num_batches = 0
+	ren.batches[0] = {}
+}
+
+GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer, cam: GFX_Camera) {
+	ren.batches[ren.num_batches].num_indices = ren.num_indices - ren.batches[ren.num_batches].first_index
+	ren.num_batches += 1
+
+	// TODO: maybe this should be in camera
+	proj := linalg.matrix4_perspective_f32(cam.fovy, 16.0/9.0, 0.1, 100.0)
+	view := GFX_get_camera_matrix(cam)
+
+	uniform := shader.Generic_3d_Vertex_Param{
+		viewproj = linalg.matrix_flatten(proj*view),
+	}
+
+	sg.update_buffer(
+		ren.vertex_pos_buffer,
+		{raw_data(ren.vertex_positions), uint(ren.num_vertices)*size_of(ren.vertex_positions[0])},
+	)
+	sg.update_buffer(
+		ren.vertex_normal_buffer,
+		{raw_data(ren.vertex_normals), uint(ren.num_vertices)*size_of(ren.vertex_normals[0])},
+	)
+	sg.update_buffer(
+		ren.vertex_uv_buffer,
+		{raw_data(ren.vertex_uvs), uint(ren.num_vertices)*size_of(ren.vertex_uvs[0])},
+	)
+	sg.update_buffer(
+		ren.vertex_color_buffer,
+		{raw_data(ren.vertex_colors), uint(ren.num_vertices)*size_of(ren.vertex_colors[0])},
+	)
+	sg.update_buffer(
+		ren.index_buffer,
+		{raw_data(ren.indices), uint(ren.num_indices)*size_of(ren.indices[0])},
+	)
+
+	sg.begin_pass({
+		action = {
+			colors = {0 = {
+				load_action = .DONTCARE,
+			}},
+			depth = {
+				load_action = .DONTCARE,
+			},
+		},
+		swapchain = GFX_get_swapchain(),
+	})
+
+	// first batch is always empty
+	// first pass: normal
+	sg.apply_pipeline(ren.normal_pipeline)
+	for batch in ren.batches[1:ren.num_batches] {
+		if batch.kind != .Normal {
+			continue
+		}
+
+		sg.apply_bindings({
+			vertex_buffers = {
+				shader.ATTR_generic_3d_generic_3d_A_position = ren.vertex_pos_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_normal = ren.vertex_normal_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_uv = ren.vertex_uv_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_color = ren.vertex_color_buffer,
+			},
+			index_buffer = ren.index_buffer,
+			images = {shader.IMG_generic_3d_U_texture = batch.texture},
+			samplers = {shader.SMP_generic_3d_U_sampler = batch.sampler},
+		})
+		sg.apply_uniforms(shader.UB_generic_3d_Vertex_Param, {&uniform, size_of(uniform)})
+		sg.draw(batch.first_index, batch.num_indices, 1)
+	}
+
+	// second pass: decal
+	sg.apply_pipeline(ren.decal_pipeline)
+	for batch in ren.batches[1:ren.num_batches] {
+		if batch.kind != .Decal {
+			continue
+		}
+
+		sg.apply_bindings({
+			vertex_buffers = {
+				0 = ren.vertex_pos_buffer,
+				1 = ren.vertex_normal_buffer,
+				2 = ren.vertex_uv_buffer,
+				3 = ren.vertex_color_buffer,
+			},
+			index_buffer = ren.index_buffer,
+			images = {shader.IMG_generic_3d_U_texture = batch.texture},
+			samplers = {shader.SMP_generic_3d_U_sampler = batch.sampler},
+		})
+		sg.apply_uniforms(shader.UB_generic_3d_Vertex_Param, {&uniform, size_of(uniform)})
+		sg.draw(batch.first_index, batch.num_indices, 1)
+	}
+
+	sg.end_pass()
+}
+
+GFX_get_default_3d_sampler :: proc(ren: GFX_3D_Renderer) -> sg.Sampler {
+	return ren.default_sampler
+}
+
+GFX_draw_3d_triangle :: proc(
+	ren: ^GFX_3D_Renderer,
+	p1: M_Vec3f32, n1: M_Vec3f32, c1: M_Color,
+	p2: M_Vec3f32, n2: M_Vec3f32, c2: M_Color,
+	p3: M_Vec3f32, n3: M_Vec3f32, c3: M_Color,
+) {
+	GFX__new_3d_batch_if_needed(ren, .Normal, ren.white_texture, ren.default_sampler)
+
+	ren.vertex_positions[ren.num_vertices] = p1
+	ren.vertex_normals[ren.num_vertices] = n1
+	ren.vertex_uvs[ren.num_vertices] = {0.0, 0.0}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c1)
+	ren.indices[ren.num_indices] = GFX__3D_Index(ren.num_vertices)
+	ren.num_vertices += 1
+	ren.num_indices += 1
+
+	ren.vertex_positions[ren.num_vertices] = p2
+	ren.vertex_normals[ren.num_vertices] = n2
+	ren.vertex_uvs[ren.num_vertices] = {1.0, 0.0}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c2)
+	ren.indices[ren.num_indices] = GFX__3D_Index(ren.num_vertices)
+	ren.num_vertices += 1
+	ren.num_indices += 1
+
+	ren.vertex_positions[ren.num_vertices] = p3
+	ren.vertex_normals[ren.num_vertices] = n3
+	ren.vertex_uvs[ren.num_vertices] = {1.0, 1.0}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c3)
+	ren.indices[ren.num_indices] = GFX__3D_Index(ren.num_vertices)
+	ren.num_vertices += 1
+	ren.num_indices += 1
+}
+
+/*
+GFX_draw_2d_texture :: proc(
+	ren: ^GFX_2D_Renderer,
+	texture: sg.Image,
+	sampler: sg.Sampler,
+	source: M_Rect,
+	dest: M_Rect,
+	tint: M_Color,
+) {
+	GFX__new_2d_batch_if_needed(ren, texture, sampler)
+
+	col := M_frgba_from_urgba(tint)
+	start_index := GFX__2D_Index(ren.num_vertices)
+
+	tex_width := f32(sg.query_image_width(texture))
+	tex_height := f32(sg.query_image_height(texture))
+
+	src_min := M_Vec2f32{
+		source.x/tex_width,
+		source.y/tex_height,
+	}
+	src_max := M_Vec2f32{
+		(source.x + source.width)/tex_width,
+		(source.y + source.height)/tex_height,
+	}
+
+	ren.vertex_positions[ren.num_vertices] = {dest.x, dest.y}
+	ren.vertex_uvs[ren.num_vertices] = {src_min.x, src_min.y}
+	ren.vertex_colors[ren.num_vertices] = col
+	ren.num_vertices += 1
+
+	ren.vertex_positions[ren.num_vertices] = {dest.x + dest.width, dest.y}
+	ren.vertex_uvs[ren.num_vertices] = {src_max.x, src_min.y}
+	ren.vertex_colors[ren.num_vertices] = col
+	ren.num_vertices += 1
+
+	ren.vertex_positions[ren.num_vertices] = {dest.x + dest.width, dest.y + dest.height}
+	ren.vertex_uvs[ren.num_vertices] = {src_max.x, src_max.y}
+	ren.vertex_colors[ren.num_vertices] = col
+	ren.num_vertices += 1
+
+	ren.vertex_positions[ren.num_vertices] = {dest.x, dest.y + dest.height}
+	ren.vertex_uvs[ren.num_vertices] = {src_min.x, src_max.y}
+	ren.vertex_colors[ren.num_vertices] = col
+	ren.num_vertices += 1
+
+	ren.indices[ren.num_indices + 0] = start_index + 0
+	ren.indices[ren.num_indices + 1] = start_index + 1
+	ren.indices[ren.num_indices + 2] = start_index + 2
+	ren.indices[ren.num_indices + 3] = start_index + 0
+	ren.indices[ren.num_indices + 4] = start_index + 2
+	ren.indices[ren.num_indices + 5] = start_index + 3
+	ren.num_indices += 6
+}
+*/
+
+
+
+@(private="file")
+GFX__3D_Index :: u32
+
+@(private="file")
+GFX__3D_Batch_Kind :: enum {
+	Normal,
+	Decal,
+}
+
+@(private="file")
+GFX__3D_Batch :: struct {
+	kind: GFX__3D_Batch_Kind,
+	first_index: u32,
+	num_indices: u32,
+	texture: sg.Image,
+	sampler: sg.Sampler,
+}
+
+@(private="file")
+GFX__new_3d_batch_if_needed :: proc(
+	ren: ^GFX_3D_Renderer,
+	kind: GFX__3D_Batch_Kind,
+	tex: sg.Image,
+	smp: sg.Sampler,
+) {
+	curr_batch := &ren.batches[ren.num_batches]
+	if curr_batch.kind != kind || curr_batch.texture != tex || curr_batch.sampler != smp {
+		curr_batch.num_indices = ren.num_indices - curr_batch.first_index
+		ren.num_batches += 1
+		curr_batch = &ren.batches[ren.num_batches]
+		curr_batch.kind = kind
+		curr_batch.first_index = ren.num_indices
+		curr_batch.texture = tex
+		curr_batch.sampler = smp
+	}
+}
+
+/*
+- level mesh
+- objects (entities, projectiles, etc.)
+- particles
+- decals (quad with depth test func set to EQUAL)
+*/
+
+/*
+- normal pipeline
+- decal pipeline
+- player's hand pipeline
+*/

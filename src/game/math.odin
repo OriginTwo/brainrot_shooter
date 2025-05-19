@@ -27,15 +27,15 @@ M_COLOR_YELLOW  :: M_Color{255, 255,   0, 255}
 M_COLOR_MAGENTA :: M_Color{255,   0, 255, 255}
 M_COLOR_CYAN    :: M_Color{  0, 255, 255, 255}
 
-M_FCOLOR_BLANK   :: M_Color{0.0, 0.0, 0.0, 0.0}
-M_FCOLOR_BLACK   :: M_Color{0.0, 0.0, 0.0, 1.0}
-M_FCOLOR_WHITE   :: M_Color{1.0, 1.0, 1.0, 1.0}
-M_FCOLOR_RED     :: M_Color{1.0, 0.0, 0.0, 1.0}
-M_FCOLOR_GREEN   :: M_Color{0.0, 1.0, 0.0, 1.0}
-M_FCOLOR_BLUE    :: M_Color{0.0, 0.0, 1.0, 1.0}
-M_FCOLOR_YELLOW  :: M_Color{1.0, 1.0, 0.0, 1.0}
-M_FCOLOR_MAGENTA :: M_Color{1.0, 0.0, 1.0, 1.0}
-M_FCOLOR_CYAN    :: M_Color{0.0, 1.0, 1.0, 1.0}
+M_FCOLOR_BLANK   :: M_FColor{0.0, 0.0, 0.0, 0.0}
+M_FCOLOR_BLACK   :: M_FColor{0.0, 0.0, 0.0, 1.0}
+M_FCOLOR_WHITE   :: M_FColor{1.0, 1.0, 1.0, 1.0}
+M_FCOLOR_RED     :: M_FColor{1.0, 0.0, 0.0, 1.0}
+M_FCOLOR_GREEN   :: M_FColor{0.0, 1.0, 0.0, 1.0}
+M_FCOLOR_BLUE    :: M_FColor{0.0, 0.0, 1.0, 1.0}
+M_FCOLOR_YELLOW  :: M_FColor{1.0, 1.0, 0.0, 1.0}
+M_FCOLOR_MAGENTA :: M_FColor{1.0, 0.0, 1.0, 1.0}
+M_FCOLOR_CYAN    :: M_FColor{0.0, 1.0, 1.0, 1.0}
 
 M_is_equal_approx :: proc(a, b: f32, margin: f32 = math.F32_EPSILON) -> bool {
 	return abs(a - b) <= margin
