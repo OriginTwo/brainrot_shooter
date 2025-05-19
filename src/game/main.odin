@@ -80,11 +80,10 @@ main :: proc() {
 
 		// tick
 		{
-			INP_update(&tick_input_state)
-			tick_input_state = frame_input_state
 			for accumulator >= SECONDS_PER_TICK {
 				accumulator -= SECONDS_PER_TICK
 				TIME_tick_timers(SECONDS_PER_TICK)
+				INP_copy(&tick_input_state, frame_input_state)
 				SCN_tick(tick_input_state, SECONDS_PER_TICK)
 			}
 		}

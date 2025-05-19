@@ -10,9 +10,8 @@ INP_State :: struct {
 	curr_mouse_down: [INP_Mouse_Button]bool,
 	prev_mouse_down: [INP_Mouse_Button]bool,
 
-	curr_mouse_pos: M_Vec2f32,
-	prev_mouse_pos: M_Vec2f32,
-
+	mouse_pos: M_Vec2f32,
+	mouse_delta: M_Vec2f32,
 	mouse_wheel: M_Vec2f32,
 }
 
@@ -24,19 +23,26 @@ INP_Mouse_Button :: enum {
 	X2 = sdl.BUTTON_X2,
 }
 
-INP_update :: proc(state: ^INP_State) {
+INP_copy :: proc(dst: ^INP_State, src: INP_State) {
 	for key in sdl.Scancode {
-		state.prev_key_down[key] = state.curr_key_down[key]
+		dst.prev_key_down[key] = dst.curr_key_down[key]
+		dst.curr_key_down[key] = src.curr_key_down[key]
 	}
 
 	for button in INP_Mouse_Button {
-		state.prev_mouse_down[button] = state.curr_mouse_down[button]
+		dst.prev_mouse_down[button] = dst.curr_mouse_down[button]
+		dst.curr_mouse_down[button] = src.curr_mouse_down[button]
 	}
 
-	state.prev_mouse_pos = state.curr_mouse_pos
+	dst.mouse_pos = src.mouse_pos
+	dst.mouse_delta = src.mouse_delta
+	dst.mouse_wheel = src.mouse_wheel
 }
 
 INP_handle_event :: proc(state: ^INP_State, ev: ^sdl.Event) {
+	state.mouse_delta = {}
+	state.mouse_wheel = {}
+
 	#partial switch ev.type {
 	case .KEY_DOWN, .KEY_UP:
 		state.curr_key_down[ev.key.scancode] = ev.key.down
@@ -46,7 +52,8 @@ INP_handle_event :: proc(state: ^INP_State, ev: ^sdl.Event) {
 		state.curr_mouse_down[INP_Mouse_Button(ev.button.button)] = ev.button.down
 
 	case .MOUSE_MOTION:
-		state.curr_mouse_pos = {ev.motion.x, ev.motion.y}
+		state.mouse_pos = {ev.motion.x, ev.motion.y}
+		state.mouse_delta = {ev.motion.xrel, ev.motion.yrel}
 
 	case .MOUSE_WHEEL:
 		state.mouse_wheel = {ev.wheel.x, ev.wheel.y}
@@ -82,9 +89,9 @@ INP_is_mouse_down :: proc(state: INP_State, button: INP_Mouse_Button) -> bool {
 }
 
 INP_get_mouse_pos :: proc(state: INP_State) -> M_Vec2f32 {
-	return state.curr_mouse_pos
+	return state.mouse_pos
 }
 
 INP_get_mouse_delta :: proc(state: INP_State) -> M_Vec2f32 {
-	return state.curr_mouse_pos - state.prev_mouse_pos
+	return state.mouse_delta
 }
