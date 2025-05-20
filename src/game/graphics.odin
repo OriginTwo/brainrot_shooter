@@ -895,7 +895,7 @@ GFX_create_3d_renderer :: proc(
 			primitive_type = .TRIANGLES,
 			index_type = .UINT16 when size_of(GFX__3D_Index) == 2 else .UINT32,
 			cull_mode = .BACK,
-			face_winding = .CCW,
+			face_winding = .CW,
 			sample_count = 1,
 		})
 
@@ -943,7 +943,7 @@ GFX_create_3d_renderer :: proc(
 			primitive_type = .TRIANGLES,
 			index_type = .UINT16 when size_of(GFX__3D_Index) == 2 else .UINT32,
 			cull_mode = .BACK,
-			face_winding = .CCW,
+			face_winding = .CW,
 			sample_count = 1,
 		})
 	}
@@ -1315,10 +1315,10 @@ GFX_draw_3d_billboard_texture :: proc(
 	color: M_Color,
 	y_only := false,
 ) {
-	local_p1 := M_Vec3f32{-size.x, -size.y, 0.0}/2.0
-	local_p2 := M_Vec3f32{ size.x, -size.y, 0.0}/2.0
-	local_p3 := M_Vec3f32{ size.x,  size.y, 0.0}/2.0
-	local_p4 := M_Vec3f32{-size.x,  size.y, 0.0}/2.0
+	local_p1 := M_Vec3f32{-size.x,  size.y, 0.0}/2.0
+	local_p2 := M_Vec3f32{ size.x,  size.y, 0.0}/2.0
+	local_p3 := M_Vec3f32{ size.x, -size.y, 0.0}/2.0
+	local_p4 := M_Vec3f32{-size.x, -size.y, 0.0}/2.0
 
 	final_p1: M_Vec3f32
 	final_p2: M_Vec3f32
