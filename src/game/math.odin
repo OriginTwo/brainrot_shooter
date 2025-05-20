@@ -37,6 +37,19 @@ M_FCOLOR_YELLOW  :: M_FColor{1.0, 1.0, 0.0, 1.0}
 M_FCOLOR_MAGENTA :: M_FColor{1.0, 0.0, 1.0, 1.0}
 M_FCOLOR_CYAN    :: M_FColor{0.0, 1.0, 1.0, 1.0}
 
+M_make_vec4f32_from_vec2f32 :: #force_inline proc(v: M_Vec2f32, a, b: f32) -> M_Vec4f32 {
+	return {v.x, v.y, a, b}
+}
+
+M_make_vec4f32_from_vec3f32 :: #force_inline proc(v: M_Vec3f32, a: f32) -> M_Vec4f32 {
+	return {v.x, v.y, v.z, a}
+}
+
+M_make_vec4f32 :: proc {
+	M_make_vec4f32_from_vec2f32,
+	M_make_vec4f32_from_vec3f32,
+}
+
 M_is_equal_approx :: proc(a, b: f32, margin: f32 = math.F32_EPSILON) -> bool {
 	return abs(a - b) <= margin
 }

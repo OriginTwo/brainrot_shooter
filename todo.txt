@@ -12,15 +12,18 @@
 			X texture
 			X text
 		- 3d renderer
-			- triangle
+			X triangle
 				X normal
-				- billboard
-			- rect
-				- normal
-				- billboard
-			- texture
-				- normal
-				- billboard
+				X billboard
+			X rect
+				X normal
+				X billboard
+			X texture
+				X normal
+				X billboard
+				X decal
+			- wireframe (for debugging)
+			- culling, face winding
 			- fog
 			- lighting
 			- post-processing effects

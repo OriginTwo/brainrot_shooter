@@ -347,6 +347,13 @@ GFX_get_camera_forward_up_right :: proc(cam: GFX_Camera) -> (forward, up, right:
 	return
 }
 
+GFX_get_camera_forward_up_right_from_matrix :: proc(mat: linalg.Matrix4f32) -> (forward, up, right: M_Vec3f32) {
+	forward = {mat[2, 0], mat[2, 1], mat[2, 2]}
+	up = {mat[1, 0], mat[1, 1], mat[1, 2]}
+	right = {mat[0, 0], mat[0, 1], mat[0, 2]}
+	return
+}
+
 
 ///////////////////////////////////////////////////////////
 // GENERIC RENDERER 2D
@@ -795,6 +802,9 @@ GFX_3D_Renderer :: struct {
 
 	num_batches: int,
 	batches: []GFX__3D_Batch,
+
+	camera: GFX_Camera,
+	camera_mat: linalg.Matrix4f32,
 }
 
 GFX_create_3d_renderer :: proc(
@@ -918,7 +928,8 @@ GFX_create_3d_renderer :: proc(
 			depth = {
 				pixel_format = .DEPTH,
 				compare = .LESS_EQUAL,
-				write_enabled = true,
+				write_enabled = false,
+				bias = -0.5,
 			},
 			color_count = 1,
 			colors = {0 = {blend = {
@@ -1005,20 +1016,22 @@ GFX_destroy_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 	ren^ = {}
 }
 
-GFX_begin_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
+GFX_begin_3d_renderer :: proc(ren: ^GFX_3D_Renderer, cam: GFX_Camera) {
 	ren.num_vertices = 0
 	ren.num_indices = 0
 	ren.num_batches = 0
 	ren.batches[0] = {}
+	ren.camera = cam
+	ren.camera_mat = GFX_get_camera_matrix(ren.camera)
 }
 
-GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer, cam: GFX_Camera) {
+GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 	ren.batches[ren.num_batches].num_indices = ren.num_indices - ren.batches[ren.num_batches].first_index
 	ren.num_batches += 1
 
 	// TODO: unhard-code aspect ratio
-	proj := linalg.matrix4_perspective_f32(cam.fovy, 16.0/9.0, 0.1, 100.0)
-	view := GFX_get_camera_matrix(cam)
+	proj := linalg.matrix4_perspective_f32(ren.camera.fovy, 16.0/9.0, 0.3, 100.0)
+	view := ren.camera_mat
 
 	uniform := shader.Generic_3d_Vertex_Param{
 		viewproj = linalg.matrix_flatten(proj*view),
@@ -1142,11 +1155,6 @@ GFX_draw_3d_triangle :: proc(
 	ren.num_indices += 1
 }
 
-// TODO: IMPLEMENTATION ===================================
-// TODO: IMPLEMENTATION ===================================
-// TODO: IMPLEMENTATION ===================================
-// TODO: IMPLEMENTATION ===================================
-// TODO: IMPLEMENTATION ===================================
 GFX_draw_3d_billboard_triangle :: proc(
 	ren: ^GFX_3D_Renderer,
 	p1: M_Vec3f32, c1: M_Color,
@@ -1154,34 +1162,102 @@ GFX_draw_3d_billboard_triangle :: proc(
 	p3: M_Vec3f32, c3: M_Color,
 	y_only := false
 ) {
+	center := (p1 + p2 + p3)/3.0
+
+	local_p1 := p1 - center
+	local_p2 := p2 - center
+	local_p3 := p3 - center
+
+	final_p1: M_Vec3f32
+	final_p2: M_Vec3f32
+	final_p3: M_Vec3f32
+
+	normal: M_Vec3f32
+
+	if y_only {
+		face_dir := ren.camera.position - center
+		face_dir.y = 0.0  // project onto xz-plane
+		face_dir = linalg.normalize0(face_dir)
+		angle := math.atan2(face_dir.x, face_dir.z)
+		mat := linalg.matrix4_rotate_f32(angle, {0.0, 1.0, 0.0})
+
+		final_p1 = center + (mat*M_make_vec4f32(local_p1, 1.0)).xyz
+		final_p2 = center + (mat*M_make_vec4f32(local_p2, 1.0)).xyz
+		final_p3 = center + (mat*M_make_vec4f32(local_p3, 1.0)).xyz
+
+		normal = face_dir
+	} else {
+		_, up, right := GFX_get_camera_forward_up_right_from_matrix(ren.camera_mat)
+
+		final_p1 = center + (right*local_p1.x + up*local_p1.y)
+		final_p2 = center + (right*local_p2.x + up*local_p2.y)
+		final_p3 = center + (right*local_p3.x + up*local_p3.y)
+
+		normal = linalg.normalize0(ren.camera.position - center)
+	}
+
+	GFX_draw_3d_triangle(
+		ren,
+		final_p1, normal, c1,
+		final_p2, normal, c2,
+		final_p3, normal, c3,
+	)
 }
 
-GFX_draw_3d_rect :: proc()
-GFX_draw_3d_billboard_rect :: proc()
-GFX_draw_3d_texture :: proc()
-GFX_draw_3d_billboard_texture :: proc()
-// TODO: IMPLEMENTATION ===================================
-// TODO: IMPLEMENTATION ===================================
-// TODO: IMPLEMENTATION ===================================
-// TODO: IMPLEMENTATION ===================================
-// TODO: IMPLEMENTATION ===================================
-
-/*
-GFX_draw_2d_texture :: proc(
-	ren: ^GFX_2D_Renderer,
-	texture: sg.Image,
-	sampler: sg.Sampler,
-	source: M_Rect,
-	dest: M_Rect,
-	tint: M_Color,
+GFX_draw_3d_rect :: proc(
+	ren: ^GFX_3D_Renderer,
+	p1: M_Vec3f32, n1: M_Vec3f32, c1: M_Color,
+	p2: M_Vec3f32, n2: M_Vec3f32, c2: M_Color,
+	p3: M_Vec3f32, n3: M_Vec3f32, c3: M_Color,
+	p4: M_Vec3f32, n4: M_Vec3f32, c4: M_Color,
 ) {
-	GFX__new_2d_batch_if_needed(ren, texture, sampler)
+	GFX_draw_3d_texture(
+		ren,
+		ren.white_texture,
+		ren.default_sampler,
+		{0.0, 0.0, 1.0, 1.0},
+		p1, n1, c1,
+		p2, n2, c2,
+		p3, n3, c3,
+		p4, n4, c4,
+	)
+}
 
-	col := M_frgba_from_urgba(tint)
-	start_index := GFX__2D_Index(ren.num_vertices)
+GFX_draw_3d_billboard_rect :: proc(
+	ren: ^GFX_3D_Renderer,
+	center: M_Vec3f32,
+	size: M_Vec2f32,
+	color: M_Color,
+	y_only := false,
+) {
+	GFX_draw_3d_billboard_texture(
+		ren,
+		ren.white_texture,
+		ren.default_sampler,
+		center,
+		size,
+		{0.0, 0.0, 1.0, 1.0},
+		color,
+		y_only,
+	)
+}
 
-	tex_width := f32(sg.query_image_width(texture))
-	tex_height := f32(sg.query_image_height(texture))
+GFX_draw_3d_texture :: proc(
+	ren: ^GFX_3D_Renderer,
+	tex: sg.Image,
+	smp: sg.Sampler,
+	source: M_Rect,
+	p1: M_Vec3f32, n1: M_Vec3f32, c1: M_Color,
+	p2: M_Vec3f32, n2: M_Vec3f32, c2: M_Color,
+	p3: M_Vec3f32, n3: M_Vec3f32, c3: M_Color,
+	p4: M_Vec3f32, n4: M_Vec3f32, c4: M_Color,
+) {
+	GFX__new_3d_batch_if_needed(ren, .Normal, tex, smp)
+
+	start_index := GFX__3D_Index(ren.num_vertices)
+
+	tex_width := f32(sg.query_image_width(tex))
+	tex_height := f32(sg.query_image_height(tex))
 
 	src_min := M_Vec2f32{
 		source.x/tex_width,
@@ -1192,22 +1268,147 @@ GFX_draw_2d_texture :: proc(
 		(source.y + source.height)/tex_height,
 	}
 
-	ren.vertex_positions[ren.num_vertices] = {dest.x, dest.y}
+	ren.vertex_positions[ren.num_vertices] = p1
+	ren.vertex_normals[ren.num_vertices] = n1
+	ren.vertex_uvs[ren.num_vertices] = {src_min.x, src_min.y}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c1)
+	ren.num_vertices += 1
+
+	ren.vertex_positions[ren.num_vertices] = p2
+	ren.vertex_normals[ren.num_vertices] = n2
+	ren.vertex_uvs[ren.num_vertices] = {src_max.x, src_min.y}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c2)
+	ren.num_vertices += 1
+
+	ren.vertex_positions[ren.num_vertices] = p3
+	ren.vertex_normals[ren.num_vertices] = n3
+	ren.vertex_uvs[ren.num_vertices] = {src_max.x, src_max.y}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c3)
+	ren.num_vertices += 1
+
+	ren.vertex_positions[ren.num_vertices] = p4
+	ren.vertex_normals[ren.num_vertices] = n4
+	ren.vertex_uvs[ren.num_vertices] = {src_min.x, src_max.y}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c4)
+	ren.num_vertices += 1
+
+	ren.indices[ren.num_indices + 0] = start_index + 0
+	ren.indices[ren.num_indices + 1] = start_index + 1
+	ren.indices[ren.num_indices + 2] = start_index + 2
+	ren.indices[ren.num_indices + 3] = start_index + 0
+	ren.indices[ren.num_indices + 4] = start_index + 2
+	ren.indices[ren.num_indices + 5] = start_index + 3
+	ren.num_indices += 6
+}
+
+GFX_draw_3d_billboard_texture :: proc(
+	ren: ^GFX_3D_Renderer,
+	tex: sg.Image,
+	smp: sg.Sampler,
+	center: M_Vec3f32,
+	size: M_Vec2f32,
+	source: M_Rect,
+	color: M_Color,
+	y_only := false,
+) {
+	local_p1 := M_Vec3f32{-size.x, -size.y, 0.0}/2.0
+	local_p2 := M_Vec3f32{ size.x, -size.y, 0.0}/2.0
+	local_p3 := M_Vec3f32{ size.x,  size.y, 0.0}/2.0
+	local_p4 := M_Vec3f32{-size.x,  size.y, 0.0}/2.0
+
+	final_p1: M_Vec3f32
+	final_p2: M_Vec3f32
+	final_p3: M_Vec3f32
+	final_p4: M_Vec3f32
+
+	normal: M_Vec3f32
+
+	if y_only {
+		face_dir := ren.camera.position - center
+		face_dir.y = 0.0  // project onto xz-plane
+		face_dir = linalg.normalize0(face_dir)
+		angle := math.atan2(face_dir.x, face_dir.z)
+		mat := linalg.matrix4_rotate_f32(angle, {0.0, 1.0, 0.0})
+
+		final_p1 = center + (mat*M_make_vec4f32(local_p1, 1.0)).xyz
+		final_p2 = center + (mat*M_make_vec4f32(local_p2, 1.0)).xyz
+		final_p3 = center + (mat*M_make_vec4f32(local_p3, 1.0)).xyz
+		final_p4 = center + (mat*M_make_vec4f32(local_p4, 1.0)).xyz
+
+		normal = face_dir
+	} else {
+		_, up, right := GFX_get_camera_forward_up_right_from_matrix(ren.camera_mat)
+
+		final_p1 = center + (right*local_p1.x + up*local_p1.y)
+		final_p2 = center + (right*local_p2.x + up*local_p2.y)
+		final_p3 = center + (right*local_p3.x + up*local_p3.y)
+		final_p4 = center + (right*local_p4.x + up*local_p4.y)
+
+		normal = linalg.normalize0(ren.camera.position - center)
+	}
+
+	GFX_draw_3d_texture(
+		ren,
+		tex,
+		smp,
+		source,
+		final_p1, normal, color,
+		final_p2, normal, color,
+		final_p3, normal, color,
+		final_p4, normal, color,
+	)
+}
+
+GFX_draw_3d_decal_texture :: proc(
+	ren: ^GFX_3D_Renderer,
+	tex: sg.Image,
+	smp: sg.Sampler,
+	p1: M_Vec3f32,
+	p2: M_Vec3f32,
+	p3: M_Vec3f32,
+	p4: M_Vec3f32,
+	normal: M_Vec3f32,
+	source: M_Rect,
+	color: M_Color,
+) {
+	GFX__new_3d_batch_if_needed(ren, .Decal, tex, smp)
+
+	start_index := GFX__3D_Index(ren.num_vertices)
+
+	tex_width := f32(sg.query_image_width(tex))
+	tex_height := f32(sg.query_image_height(tex))
+
+	src_min := M_Vec2f32{
+		source.x/tex_width,
+		source.y/tex_height,
+	}
+	src_max := M_Vec2f32{
+		(source.x + source.width)/tex_width,
+		(source.y + source.height)/tex_height,
+	}
+
+	col := M_frgba_from_urgba(color)
+
+	ren.vertex_positions[ren.num_vertices] = p1
+	ren.vertex_normals[ren.num_vertices] = normal
 	ren.vertex_uvs[ren.num_vertices] = {src_min.x, src_min.y}
 	ren.vertex_colors[ren.num_vertices] = col
 	ren.num_vertices += 1
 
-	ren.vertex_positions[ren.num_vertices] = {dest.x + dest.width, dest.y}
+	ren.vertex_positions[ren.num_vertices] = p2
+	ren.vertex_normals[ren.num_vertices] = normal
 	ren.vertex_uvs[ren.num_vertices] = {src_max.x, src_min.y}
 	ren.vertex_colors[ren.num_vertices] = col
 	ren.num_vertices += 1
 
-	ren.vertex_positions[ren.num_vertices] = {dest.x + dest.width, dest.y + dest.height}
+	ren.vertex_positions[ren.num_vertices] = p3
+	ren.vertex_normals[ren.num_vertices] = normal
 	ren.vertex_uvs[ren.num_vertices] = {src_max.x, src_max.y}
 	ren.vertex_colors[ren.num_vertices] = col
 	ren.num_vertices += 1
 
-	ren.vertex_positions[ren.num_vertices] = {dest.x, dest.y + dest.height}
+	ren.vertex_positions[ren.num_vertices] = p4
+	ren.vertex_normals[ren.num_vertices] = normal
 	ren.vertex_uvs[ren.num_vertices] = {src_min.x, src_max.y}
 	ren.vertex_colors[ren.num_vertices] = col
 	ren.num_vertices += 1
@@ -1220,7 +1421,6 @@ GFX_draw_2d_texture :: proc(
 	ren.indices[ren.num_indices + 5] = start_index + 3
 	ren.num_indices += 6
 }
-*/
 
 
 
