@@ -23,7 +23,7 @@
 				X billboard
 				X decal
 			- wireframe (for debugging)
-			- culling, face winding
+			X culling, face winding
 			- fog
 			- lighting
 			- post-processing effects

@@ -894,6 +894,8 @@ GFX_create_3d_renderer :: proc(
 			}}},
 			primitive_type = .TRIANGLES,
 			index_type = .UINT16 when size_of(GFX__3D_Index) == 2 else .UINT32,
+			cull_mode = .BACK,
+			face_winding = .CCW,
 			sample_count = 1,
 		})
 
@@ -940,6 +942,8 @@ GFX_create_3d_renderer :: proc(
 			}}},
 			primitive_type = .TRIANGLES,
 			index_type = .UINT16 when size_of(GFX__3D_Index) == 2 else .UINT32,
+			cull_mode = .BACK,
+			face_winding = .CCW,
 			sample_count = 1,
 		})
 	}
