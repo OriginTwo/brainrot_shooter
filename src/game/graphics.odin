@@ -318,39 +318,17 @@ GFX_Camera :: struct {
 }
 
 GFX_get_camera_matrix :: proc(cam: GFX_Camera) -> linalg.Matrix4f32 {
-	cy := math.cos(cam.yaw*math.RAD_PER_DEG)
-	sy := math.sin(cam.yaw*math.RAD_PER_DEG)
-	cp := math.cos(cam.pitch*math.RAD_PER_DEG)
-	sp := math.sin(cam.pitch*math.RAD_PER_DEG)
-	cr := math.cos(cam.roll*math.RAD_PER_DEG)
-	sr := math.sin(cam.roll*math.RAD_PER_DEG)
-
-	pos := cam.position + cam.offset
-
 	// // https://en.wikipedia.org/wiki/Rotation_matrix#General_3D_rotations
 	// // extrinsics rotation
 
-	// mat := linalg.MATRIX4F32_IDENTITY
+	// view = [
+	// 	[  right.x,   right.y,   right.z, -dot(  right, pos)]
+	// 	[     up.x,      up.y,      up.z, -dot(     up, pos)]
+	// 	[forward.x, forward.y, forward.z, -dot(forward, pos)]
+	// 	[        0,         0,         0,          1        ]
+	// ]
 
-	// // rotation
-	// mat[0, 0] = cy*cr
-	// mat[0, 1] = sp*sy*cr - cp*sr
-	// mat[0, 2] = cp*sy*cr + sp*sr
-	// mat[1, 0] = cy*sr
-	// mat[1, 1] = sp*sy*sr + cp*cr
-	// mat[1, 2] = cp*sy*sr - sp*cr
-	// mat[2, 0] = -sy
-	// mat[2, 1] = sp*cy
-	// mat[2, 2] = cp*cy
-
-	// // translation
-	// forward := M_Vec3f32{mat[0, 2], mat[1, 2], mat[2, 2]}
-	// right := M_Vec3f32{mat[0, 0], mat[1, 0], mat[2, 0]}
-	// up := M_Vec3f32{mat[0, 1], mat[1, 1], mat[2, 1]}
-
-	// mat[0, 3] = -linalg.dot(right, cam.position)
-	// mat[1, 3] = -linalg.dot(up, cam.position)
-	// mat[2, 3] = -linalg.dot(forward, cam.position)
+	pos := cam.position + cam.offset
 
 	mat := linalg.MATRIX4F32_IDENTITY
 	mat *= linalg.matrix4_rotate_f32(cam.pitch*math.RAD_PER_DEG, {1.0, 0.0, 0.0})
@@ -359,6 +337,14 @@ GFX_get_camera_matrix :: proc(cam: GFX_Camera) -> linalg.Matrix4f32 {
 	mat *= linalg.matrix4_translate_f32(-cam.position)
 
 	return mat
+}
+
+GFX_get_camera_forward_up_right :: proc(cam: GFX_Camera) -> (forward, up, right: M_Vec3f32) {
+	mat := GFX_get_camera_matrix(cam)
+	forward = {mat[2, 0], mat[2, 1], mat[2, 2]}
+	up = {mat[1, 0], mat[1, 1], mat[1, 2]}
+	right = {mat[0, 0], mat[0, 1], mat[0, 2]}
+	return
 }
 
 
@@ -1030,7 +1016,7 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer, cam: GFX_Camera) {
 	ren.batches[ren.num_batches].num_indices = ren.num_indices - ren.batches[ren.num_batches].first_index
 	ren.num_batches += 1
 
-	// TODO: maybe this should be in camera
+	// TODO: unhard-code aspect ratio
 	proj := linalg.matrix4_perspective_f32(cam.fovy, 16.0/9.0, 0.1, 100.0)
 	view := GFX_get_camera_matrix(cam)
 
@@ -1155,6 +1141,30 @@ GFX_draw_3d_triangle :: proc(
 	ren.num_vertices += 1
 	ren.num_indices += 1
 }
+
+// TODO: IMPLEMENTATION ===================================
+// TODO: IMPLEMENTATION ===================================
+// TODO: IMPLEMENTATION ===================================
+// TODO: IMPLEMENTATION ===================================
+// TODO: IMPLEMENTATION ===================================
+GFX_draw_3d_billboard_triangle :: proc(
+	ren: ^GFX_3D_Renderer,
+	p1: M_Vec3f32, c1: M_Color,
+	p2: M_Vec3f32, c2: M_Color,
+	p3: M_Vec3f32, c3: M_Color,
+	y_only := false
+) {
+}
+
+GFX_draw_3d_rect :: proc()
+GFX_draw_3d_billboard_rect :: proc()
+GFX_draw_3d_texture :: proc()
+GFX_draw_3d_billboard_texture :: proc()
+// TODO: IMPLEMENTATION ===================================
+// TODO: IMPLEMENTATION ===================================
+// TODO: IMPLEMENTATION ===================================
+// TODO: IMPLEMENTATION ===================================
+// TODO: IMPLEMENTATION ===================================
 
 /*
 GFX_draw_2d_texture :: proc(

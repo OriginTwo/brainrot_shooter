@@ -162,9 +162,7 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	_ctx.cam.pitch = clamp(_ctx.cam.pitch, -89.0, 89.0)
 	_ctx.cam.yaw = math.mod(_ctx.cam.yaw, 360.0)
 
-	mat := GFX_get_camera_matrix(_ctx.cam)
-	forward := M_Vec3f32{mat[2, 0], mat[1, 0], mat[0, 0]}
-	right := M_Vec3f32{mat[2, 2], mat[1, 2], mat[0, 2]}
+	forward, _, right := GFX_get_camera_forward_up_right(_ctx.cam)
 	mov_vec: M_Vec3f32
 	if INP_is_key_down(input, .W) {mov_vec -= forward}
 	if INP_is_key_down(input, .S) {mov_vec += forward}
