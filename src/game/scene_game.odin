@@ -265,6 +265,30 @@ scn_game_draw :: proc(alpha: f32) {
 		{255, 255, 255, 255},
 	)
 
+	GFX_add_3d_light(&_ctx.ren3d, {
+		position = {-3.0, 1.5, 0.0},
+		intensity = 4.0,
+		radius = 6.0,
+		color = {0.8, 0.2, 0.2},
+		falloff = 1.0,
+	})
+
+	GFX_add_3d_light(&_ctx.ren3d, {
+		position = {3.0, 1.5, 0.0},
+		intensity = 4.0,
+		radius = 6.0,
+		color = {0.2, 0.2, 0.8},
+		falloff = 1.0,
+	})
+
+	GFX_add_3d_light(&_ctx.ren3d, {
+		position = _ctx.cam.position,
+		intensity = 2.0,
+		radius = 6.0,
+		color = {1.0, 1.0, 1.0},
+		falloff = 2.0,
+	})
+
 	GFX_end_3d_renderer(&_ctx.ren3d)
 
 	GFX_begin_2d_renderer(&_ctx.ren2d)
@@ -319,7 +343,7 @@ scn_game_draw :: proc(alpha: f32) {
 		im.SliderFloat("pos_z", &_ctx.cam.position.z, -10.0, 10.0)
 		im.SliderFloat("pitch", &_ctx.cam.pitch, -89.0, 89.0)
 		im.SliderFloat("yaw", &_ctx.cam.yaw, 0.0, 360.0)
-		im.SliderFloat("roll", &_ctx.cam.roll, 0.0, 360.0)
+		im.SliderFloat("roll", &_ctx.cam.roll, -30.0, 30.0)
 	}
 	im.End()
 

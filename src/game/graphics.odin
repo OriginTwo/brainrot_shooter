@@ -803,8 +803,31 @@ GFX_3D_Renderer :: struct {
 	num_batches: int,
 	batches: []GFX__3D_Batch,
 
+	fog_density: f32,
+	fog_gradient: f32,
+	fog_color: M_Vec3f32,
+
+	num_lights: int,
+	lights: [GFX__MAX_3D_LIGHT]GFX_3D_Light,
+
 	camera: GFX_Camera,
-	camera_mat: linalg.Matrix4f32,
+	view_mat: linalg.Matrix4f32,
+	proj_mat: linalg.Matrix4f32,
+}
+
+GFX_3D_Light :: struct {
+	position: M_Vec3f32,
+	intensity: f32,
+	radius: f32,
+	color: M_Vec3f32,
+	falloff: f32,
+}
+
+GFX_3D_DEFAULT_LIGHT :: GFX_3D_Light{
+	intensity = 1.0,
+	radius = 1.0,
+	color = {1.0, 1.0, 1.0},
+	falloff = 1.0,
 }
 
 GFX_create_3d_renderer :: proc(
@@ -997,6 +1020,11 @@ GFX_create_3d_renderer :: proc(
 	ren.vertex_colors = make([]M_FColor, max_vertex)
 	ren.indices = make([]GFX__3D_Index, max_index)
 	ren.batches = make([]GFX__3D_Batch, max_batch)
+
+	// default fog
+	ren.fog_density = 0.025
+	ren.fog_gradient = 2.0
+	ren.fog_color = {0.0, 0.0, 0.0}
 }
 
 GFX_destroy_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
@@ -1025,20 +1053,64 @@ GFX_begin_3d_renderer :: proc(ren: ^GFX_3D_Renderer, cam: GFX_Camera) {
 	ren.num_indices = 0
 	ren.num_batches = 0
 	ren.batches[0] = {}
+	ren.num_lights = 0
 	ren.camera = cam
-	ren.camera_mat = GFX_get_camera_matrix(ren.camera)
+	ren.view_mat = GFX_get_camera_matrix(ren.camera)
+	// TODO: unhard-code aspect ratio
+	ren.proj_mat = linalg.matrix4_perspective_f32(ren.camera.fovy, 16.0/9.0, 0.3, 100.0)
 }
 
 GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 	ren.batches[ren.num_batches].num_indices = ren.num_indices - ren.batches[ren.num_batches].first_index
 	ren.num_batches += 1
 
-	// TODO: unhard-code aspect ratio
-	proj := linalg.matrix4_perspective_f32(ren.camera.fovy, 16.0/9.0, 0.3, 100.0)
-	view := ren.camera_mat
+	close_lights: [GFX__MAX_3D_LIGHT_IN_SHADER]GFX_3D_Light
+	{
+		temp_lights := make([]GFX_3D_Light, ren.num_lights, context.temp_allocator)
+		copy(temp_lights, ren.lights[:ren.num_lights])
+		for &light in temp_lights {
+			light.position -= ren.camera.position
+		}
 
-	uniform := shader.Generic_3d_Vertex_Param{
-		viewproj = linalg.matrix_flatten(proj*view),
+		slice.sort_by_cmp(temp_lights, proc(i, j: GFX_3D_Light) -> slice.Ordering {
+			dist_i_sqr := linalg.length2(i.position)
+			dist_j_sqr := linalg.length2(j.position)
+			if dist_i_sqr < dist_j_sqr {
+				return .Less
+			} else if dist_i_sqr == dist_j_sqr {
+				return .Equal
+			} else {
+				return.Greater
+			}
+		})
+
+		for i in 0..<min(len(close_lights), len(temp_lights)) {
+			close_lights[i] = temp_lights[i]
+			close_lights[i].position += ren.camera.position
+		}
+	}
+
+	vertex_param := shader.Generic_3d_Vertex_Param{
+		view = linalg.matrix_flatten(ren.view_mat),
+		proj = linalg.matrix_flatten(ren.proj_mat),
+	}
+
+	for i in 0..<ren.num_lights {
+		light := close_lights[i]
+		vertex_param.light_data[i] = {light.position.x, light.position.y, light.position.z, 0.0}
+	}
+
+	fragment_param := shader.Generic_3d_Fragment_Param{
+		fog_density = ren.fog_density,
+		fog_gradient = ren.fog_gradient,
+		fog_color = ren.fog_color,
+		light_count = i32(ren.num_lights),
+	}
+
+	for i in 0..<ren.num_lights {
+		light := close_lights[i]
+		fragment_param.light_data1[i] = {light.color.r, light.color.g, light.color.b, light.radius}
+		fragment_param.light_data2[i] = {light.intensity, light.falloff, 0.0, 0.0}
 	}
 
 	sg.update_buffer(
@@ -1093,7 +1165,8 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 			images = {shader.IMG_generic_3d_U_texture = batch.texture},
 			samplers = {shader.SMP_generic_3d_U_sampler = batch.sampler},
 		})
-		sg.apply_uniforms(shader.UB_generic_3d_Vertex_Param, {&uniform, size_of(uniform)})
+		sg.apply_uniforms(shader.UB_generic_3d_Vertex_Param, {&vertex_param, size_of(vertex_param)})
+		sg.apply_uniforms(shader.UB_generic_3d_Fragment_Param, {&fragment_param, size_of(fragment_param)})
 		sg.draw(batch.first_index, batch.num_indices, 1)
 	}
 
@@ -1115,7 +1188,8 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 			images = {shader.IMG_generic_3d_U_texture = batch.texture},
 			samplers = {shader.SMP_generic_3d_U_sampler = batch.sampler},
 		})
-		sg.apply_uniforms(shader.UB_generic_3d_Vertex_Param, {&uniform, size_of(uniform)})
+		sg.apply_uniforms(shader.UB_generic_3d_Vertex_Param, {&vertex_param, size_of(vertex_param)})
+		sg.apply_uniforms(shader.UB_generic_3d_Fragment_Param, {&fragment_param, size_of(fragment_param)})
 		sg.draw(batch.first_index, batch.num_indices, 1)
 	}
 
@@ -1124,6 +1198,19 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 
 GFX_get_default_3d_sampler :: proc(ren: GFX_3D_Renderer) -> sg.Sampler {
 	return ren.default_sampler
+}
+
+GFX_set_3d_fog_params :: proc(ren: ^GFX_3D_Renderer, density, gradient: f32, color: M_Color) {
+	ren.fog_density = 0.025
+	ren.fog_gradient = 2.0
+	ren.fog_color = M_frgba_from_urgba(color).rgb
+}
+
+GFX_add_3d_light :: proc(ren: ^GFX_3D_Renderer, light: GFX_3D_Light) {
+	if ren.num_lights < GFX__MAX_3D_LIGHT {
+		ren.lights[ren.num_lights] = light
+		ren.num_lights += 1
+	}
 }
 
 GFX_draw_3d_triangle :: proc(
@@ -1191,7 +1278,7 @@ GFX_draw_3d_billboard_triangle :: proc(
 
 		normal = face_dir
 	} else {
-		_, up, right := GFX_get_camera_forward_up_right_from_matrix(ren.camera_mat)
+		_, up, right := GFX_get_camera_forward_up_right_from_matrix(ren.view_mat)
 
 		final_p1 = center + (right*local_p1.x + up*local_p1.y)
 		final_p2 = center + (right*local_p2.x + up*local_p2.y)
@@ -1341,7 +1428,7 @@ GFX_draw_3d_billboard_texture :: proc(
 
 		normal = face_dir
 	} else {
-		_, up, right := GFX_get_camera_forward_up_right_from_matrix(ren.camera_mat)
+		_, up, right := GFX_get_camera_forward_up_right_from_matrix(ren.view_mat)
 
 		final_p1 = center + (right*local_p1.x + up*local_p1.y)
 		final_p2 = center + (right*local_p2.x + up*local_p2.y)
@@ -1428,6 +1515,9 @@ GFX_draw_3d_decal_texture :: proc(
 
 
 
+@(private="file") GFX__MAX_3D_LIGHT :: 200
+@(private="file") GFX__MAX_3D_LIGHT_IN_SHADER :: 16
+
 @(private="file")
 GFX__3D_Index :: u32
 
@@ -1475,5 +1565,5 @@ GFX__new_3d_batch_if_needed :: proc(
 /*
 - normal pipeline
 - decal pipeline
-- player's hand pipeline
+- player's hand pipeline (depth test = ALWAYS)
 */

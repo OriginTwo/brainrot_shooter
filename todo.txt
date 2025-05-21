@@ -6,7 +6,8 @@
 	X graphics            [GFX]
 		X image
 		X font
-		X camera
+		- camera
+			- offset
 		X generic 2d renderer (for ui only)
 			X rect
 			X texture
@@ -24,8 +25,8 @@
 				X decal
 			- wireframe (for debugging)
 			X culling, face winding
-			- fog
-			- lighting
+			X fog
+			X lighting
 			- post-processing effects
 			- shadow??
 	X audio               [AUD]
