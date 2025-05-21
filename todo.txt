@@ -6,8 +6,7 @@
 	X graphics            [GFX]
 		X image
 		X font
-		- camera
-			- offset
+		X camera
 		X generic 2d renderer (for ui only)
 			X rect
 			X texture

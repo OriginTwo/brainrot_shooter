@@ -334,7 +334,7 @@ GFX_get_camera_matrix :: proc(cam: GFX_Camera) -> linalg.Matrix4f32 {
 	mat *= linalg.matrix4_rotate_f32(cam.pitch*math.RAD_PER_DEG, {1.0, 0.0, 0.0})
 	mat *= linalg.matrix4_rotate_f32(cam.yaw*math.RAD_PER_DEG, {0.0, 1.0, 0.0})
 	mat *= linalg.matrix4_rotate_f32(cam.roll*math.RAD_PER_DEG, {0.0, 0.0, 1.0})
-	mat *= linalg.matrix4_translate_f32(-cam.position)
+	mat *= linalg.matrix4_translate_f32(-pos)
 
 	return mat
 }

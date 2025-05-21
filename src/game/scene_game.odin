@@ -169,8 +169,17 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	if INP_is_key_down(input, .D) {mov_vec += right}
 	if INP_is_key_down(input, .A) {mov_vec -= right}
 	mov_vec = linalg.normalize0(mov_vec)
-	mov_vec *= 5.0*delta
+	mov_vec *= 8.0*delta
 	_ctx.cam.position += mov_vec
+
+	@(static) bob_t: f32
+	if mov_vec != {} {
+		bob_t += delta*4.0
+	} else {
+		bob_t -= delta*4.0
+	}
+	bob_t = clamp(bob_t, 0.0, 1.0)
+	_ctx.cam.offset.y = 0.06*bob_t*math.sin(f32(TIME_now())*14.0)
 
 	// PART_tick(delta)
 }
