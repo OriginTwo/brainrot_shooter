@@ -7,6 +7,7 @@
 		X image
 		X font
 		X camera
+		- viewport
 		X generic 2d renderer (for ui only)
 			X rect
 			X texture
@@ -26,13 +27,14 @@
 			X culling, face winding
 			X fog
 			X lighting
-			- post-processing effects
 			- shadow??
+		- post-processing effects
+			- bloom
+			- palettize
 	X audio               [AUD]
 		X 3d
 	- particle            [PART]
 	X scene               [SCN]
-	- viewport            [VPRT]
 	- asset               [ASST] // TODO: maybe rename to resource [RES]??
 	- state machine??     [STMC]
 	- ui                  [UI]

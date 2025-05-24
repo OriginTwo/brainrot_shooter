@@ -1583,20 +1583,13 @@ GFX__new_3d_batch_if_needed :: proc(
 ///////////////////////////////////////////////////////////
 // POST-PROCESSING EFFECT RENDERER
 ///////////////////////////////////////////////////////////
-GFX_BLOOM_MIP_CHAIN_LENGTH :: 4
-
-
+GFX_BLOOM_MIP_CHAIN_LENGTH :: 7
 
 GFX_Bloom_Mip :: struct {
 	width: int,
 	height: int,
 	texture: sg.Image,
 	attachments: sg.Attachments,
-}
-
-GFX_Post_FX_Vertex :: struct {
-	pos: M_Vec2f32,
-	uv: M_Vec2f32,
 }
 
 GFX_Post_FX_Renderer :: struct {
@@ -1609,10 +1602,21 @@ GFX_Post_FX_Renderer :: struct {
 	bloom_upsample_shader: sg.Shader,
 	bloom_upsample_pipeline: sg.Pipeline,
 	bloom_mip_chain: [GFX_BLOOM_MIP_CHAIN_LENGTH]GFX_Bloom_Mip,
+
+	additive_texture: sg.Image,
+	additive_attachments: sg.Attachments,
+	additive_shader: sg.Shader,
+	additive_pipeline: sg.Pipeline,
+
+	tonemap_sampler: sg.Sampler,
+	tonemap_shader: sg.Shader,
+	tonemap_texture: sg.Image,
+	tonemap_attachments: sg.Attachments,
+	tonemap_pipeline: sg.Pipeline,
 }
 
 GFX_create_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer, width, height: int) {
-	// vertex buffer
+	// buffers
 	{
 		vertices := []struct{pos, uv: M_Vec2f32}{
 			{{-1.0,  1.0}, {0.0, 0.0}}, // 0
@@ -1733,11 +1737,109 @@ GFX_create_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer, width, height: i
 				}},
 			})
 		}
+
+		ren.additive_texture = sg.make_image({
+			render_target = true,
+			width = i32(width),
+			height = i32(height),
+			pixel_format = .RG11B10F,
+		})
+		ren.additive_attachments = sg.make_attachments({
+			colors = {0 = {
+				image = ren.additive_texture,
+			}},
+		})
+		ren.additive_shader = sg.make_shader(shader.additive_shader_desc(sg.query_backend()))
+		ren.additive_pipeline = sg.make_pipeline({
+			shader = ren.additive_shader,
+			layout = {
+				attrs = {
+					shader.ATTR_additive_additive_A_position = {
+						format = .FLOAT2,
+					},
+					shader.ATTR_additive_additive_A_uv = {
+						format = .FLOAT2,
+					},
+				},
+			},
+			depth = {
+				pixel_format = .NONE,
+			},
+			color_count = 1,
+			colors = {0 = {
+				pixel_format = sg.query_image_pixelformat(ren.additive_texture),
+				blend = {
+					enabled = true,
+					src_factor_rgb = .SRC_ALPHA,
+					dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+					op_rgb = .ADD,
+				},
+			}},
+			primitive_type = .TRIANGLES,
+			index_type = .UINT16,
+			sample_count = 1,
+		})
+	}
+
+	// tonemap
+	{
+		ren.tonemap_sampler = sg.make_sampler({
+			min_filter = .NEAREST,
+			mag_filter = .NEAREST,
+			wrap_u = .CLAMP_TO_EDGE,
+			wrap_v = .CLAMP_TO_EDGE,
+		})
+
+		ren.tonemap_shader = sg.make_shader(shader.tonemap_shader_desc(sg.query_backend()))
+
+		ren.tonemap_texture = sg.make_image({
+			render_target = true,
+			width = i32(width),
+			height = i32(height),
+			pixel_format = .RGBA8,
+		})
+
+		ren.tonemap_attachments = sg.make_attachments({
+			colors = {0 = {
+				image = ren.tonemap_texture,
+			}},
+		})
+
+		ren.tonemap_pipeline = sg.make_pipeline({
+			shader = ren.tonemap_shader,
+			layout = {
+				attrs = {
+					shader.ATTR_tonemap_tonemap_A_position = {
+						format = .FLOAT2,
+					},
+					shader.ATTR_tonemap_tonemap_A_uv = {
+						format = .FLOAT2,
+					},
+				},
+			},
+			depth = {
+				pixel_format = .NONE,
+			},
+			color_count = 1,
+			colors = {0 = {
+				pixel_format = sg.query_image_pixelformat(ren.tonemap_texture),
+				blend = {
+					enabled = true,
+					src_factor_rgb = .SRC_ALPHA,
+					dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+					op_rgb = .ADD,
+				},
+			}},
+			primitive_type = .TRIANGLES,
+			index_type = .UINT16,
+			sample_count = 1,
+		})
 	}
 }
 
 GFX_destroy_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer) {
 	sg.destroy_buffer(ren.vertex_buffer)
+	sg.destroy_buffer(ren.index_buffer)
 
 	sg.destroy_sampler(ren.bloom_sampler)
 	sg.destroy_shader(ren.bloom_downsample_shader)
@@ -1748,11 +1850,26 @@ GFX_destroy_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer) {
 		sg.destroy_image(mip.texture)
 		sg.destroy_attachments(mip.attachments)
 	}
+	sg.destroy_image(ren.additive_texture)
+	sg.destroy_attachments(ren.additive_attachments)
+	sg.destroy_shader(ren.additive_shader)
+	sg.destroy_pipeline(ren.additive_pipeline)
+
+	sg.destroy_sampler(ren.tonemap_sampler)
+	sg.destroy_shader(ren.tonemap_shader)
+	sg.destroy_pipeline(ren.tonemap_pipeline)
 }
 
-GFX_do_post_fx_bloom :: proc(ren: ^GFX_Post_FX_Renderer, src_texture: sg.Image, filter_radius: f32) {
+GFX_do_post_fx_bloom :: proc(
+	ren: ^GFX_Post_FX_Renderer,
+	src_texture: sg.Image,
+	filter_radius: f32,
+) {
 	mip_texture := src_texture
-	mip_resolution := M_Vec2f32{f32(sg.query_image_width(src_texture)), f32(sg.query_image_height(src_texture))}
+	mip_resolution := M_Vec2f32{
+		f32(sg.query_image_width(src_texture)),
+		f32(sg.query_image_height(src_texture)),
+	}
 
 	// downsample
 	for mip in ren.bloom_mip_chain {
@@ -1809,6 +1926,67 @@ GFX_do_post_fx_bloom :: proc(ren: ^GFX_Post_FX_Renderer, src_texture: sg.Image, 
 		sg.draw(0, 6, 1)
 		sg.end_pass()
 	}
+}
+
+GFX_do_post_fx_additive :: proc(
+	ren: ^GFX_Post_FX_Renderer,
+	texture0: sg.Image,
+	texture1: sg.Image,
+	sampler0: sg.Sampler,
+	sampler1: sg.Sampler,
+){
+	sg.begin_pass({
+		action = {colors = {0 = {
+			load_action = .CLEAR,
+			clear_value = {0.0, 0.0, 0.0, 1.0},
+		}}},
+		attachments = ren.additive_attachments,
+	})
+	sg.apply_pipeline(ren.additive_pipeline)
+	sg.apply_bindings({
+		vertex_buffers = {0 = ren.vertex_buffer},
+		index_buffer = ren.index_buffer,
+		images = {
+			shader.IMG_additive_U_texture0 = texture0,
+			shader.IMG_additive_U_texture1 = texture1,
+		},
+		samplers = {
+			shader.SMP_additive_U_sampler0 = sampler0,
+			shader.SMP_additive_U_sampler1 = sampler1,
+		},
+	})
+	sg.draw(0, 6, 1)
+	sg.end_pass()
+
+}
+
+GFX_do_post_fx_tonemap :: proc(
+	ren: ^GFX_Post_FX_Renderer,
+	src_texture: sg.Image,
+	exposure: f32,
+	gamma: f32,
+) {
+	sg.begin_pass({
+		action = {colors = {0 = {
+			load_action = .CLEAR,
+			clear_value = {0.0, 0.0, 0.0, 1.0},
+		}}},
+		attachments = ren.tonemap_attachments,
+	})
+	sg.apply_pipeline(ren.tonemap_pipeline)
+	sg.apply_bindings({
+		vertex_buffers = {0 = ren.vertex_buffer},
+		index_buffer = ren.index_buffer,
+		images = {shader.IMG_tonemap_U_texture = src_texture},
+		samplers = {shader.SMP_tonemap_U_sampler = ren.tonemap_sampler},
+	})
+	uniform := shader.Tonemap_Fragment_Param{
+		exposure = exposure,
+		gamma = gamma,
+	}
+	sg.apply_uniforms(shader.UB_tonemap_Fragment_Param, {&uniform, size_of(uniform)})
+	sg.draw(0, 6, 1)
+	sg.end_pass()
 }
 
 

@@ -7,10 +7,6 @@
 
 
 @vs bloom_vert
-// layout(binding=0) uniform Vertex_Param {
-// 	mat4 proj;
-// } U_param;
-
 in vec2 A_position;
 in vec2 A_uv;
 
@@ -18,7 +14,6 @@ out vec2 F_uv;
 
 void main() {
 	gl_Position = vec4(A_position, 0.0, 1.0);
-	// gl_Position = U_param.proj*vec4(A_position, 0.0, 1.0);
 	F_uv = A_uv;
 }
 @end

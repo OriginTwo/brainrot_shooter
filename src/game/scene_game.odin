@@ -23,6 +23,10 @@ _ctx: struct {
 
 	cam: GFX_Camera,
 
+	bloom_filter_radius: f32,
+	tonemap_exposure: f32,
+	tonemap_gamma: f32,
+
 	// e: PART_Handle,
 }
 
@@ -62,6 +66,10 @@ scn_game_init :: proc() {
 	}
 
 	_ctx.cam.fovy = math.PI/4.0
+
+	_ctx.bloom_filter_radius = 0.01
+	_ctx.tonemap_exposure = 1.2
+	_ctx.tonemap_gamma = 1.0
 
 	// _ctx.e = PART_emitter_create({
 	// 	particle_count = 24,
@@ -279,55 +287,74 @@ scn_game_draw :: proc(alpha: f32) {
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = {-3.0, 1.5, 0.0},
-		intensity = 4.0,
-		radius = 6.0,
+		intensity = 6.0,
+		radius = 9.0,
 		color = {0.8, 0.2, 0.2},
 		falloff = 1.0,
 	})
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = {3.0, 1.5, 0.0},
-		intensity = 4.0,
-		radius = 6.0,
+		intensity = 6.0,
+		radius = 9.0,
 		color = {0.2, 0.2, 0.8},
 		falloff = 1.0,
 	})
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = _ctx.cam.position,
-		// intensity = 2.0,
-		intensity = 50.0,
-		// radius = 6.0,
-		radius = 20.0,
+		intensity = 2.0,
+		radius = 6.0,
 		color = {1.0, 1.0, 1.0},
 		falloff = 2.0,
 	})
 
 	GFX_end_3d_renderer(&_ctx.ren3d)
 
-	GFX_do_post_fx_bloom(&_ctx.ren_fx, _ctx.ren3d.color_texture, 0.005)
+	GFX_do_post_fx_bloom(&_ctx.ren_fx, _ctx.ren3d.color_texture, _ctx.bloom_filter_radius)
+	GFX_do_post_fx_tonemap(&_ctx.ren_fx, _ctx.ren_fx.bloom_mip_chain[0].texture, _ctx.tonemap_exposure, _ctx.tonemap_gamma)
+	GFX_do_post_fx_additive(&_ctx.ren_fx, _ctx.ren3d.color_texture, _ctx.ren_fx.tonemap_texture, _ctx.ren_fx.bloom_sampler, _ctx.ren_fx.bloom_sampler)
 
 	GFX_begin_2d_renderer(&_ctx.ren2d)
 
 	win_size: [2]i32
 	sdl.GetWindowSize(WND_get_handle(), &win_size.x, &win_size.y)
-	GFX_draw_2d_texture(
-		&_ctx.ren2d,
-		_ctx.ren_fx.bloom_mip_chain[0].texture,
-		GFX_get_default_2d_sampler(_ctx.ren2d),
-		{0.0, 0.0, 1280.0/2.0, 720.0/2.0},
-		{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
-		M_COLOR_WHITE,
-	)
 
 	// GFX_draw_2d_texture(
 	// 	&_ctx.ren2d,
 	// 	_ctx.ren3d.color_texture,
 	// 	GFX_get_default_2d_sampler(_ctx.ren2d),
-	// 	{0.0, 720.0, 1280.0, -720.0},
+	// 	{0.0, 0.0, 1280.0, 720.0},
 	// 	{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
 	// 	M_COLOR_WHITE,
 	// )
+
+	// GFX_draw_2d_texture(
+	// 	&_ctx.ren2d,
+	// 	_ctx.ren_fx.bloom_mip_chain[0].texture,
+	// 	GFX_get_default_2d_sampler(_ctx.ren2d),
+	// 	{0.0, 0.0, 1280.0/2.0, 720.0/2.0},
+	// 	{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
+	// 	M_COLOR_WHITE,
+	// )
+
+	// GFX_draw_2d_texture(
+	// 	&_ctx.ren2d,
+	// 	_ctx.ren_fx.tonemap_texture,
+	// 	GFX_get_default_2d_sampler(_ctx.ren2d),
+	// 	{0.0, 0.0, 1280.0, 720.0},
+	// 	{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
+	// 	M_COLOR_WHITE,
+	// )
+
+	GFX_draw_2d_texture(
+		&_ctx.ren2d,
+		_ctx.ren_fx.additive_texture,
+		GFX_get_default_2d_sampler(_ctx.ren2d),
+		{0.0, 0.0, 1280.0, 720.0},
+		{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
+		M_COLOR_WHITE,
+	)
 
 	// GFX_draw_2d_triangle(
 	// 	&_ctx.ren2d,
@@ -380,6 +407,9 @@ scn_game_draw :: proc(alpha: f32) {
 		im.SliderFloat("pitch", &_ctx.cam.pitch, -89.0, 89.0)
 		im.SliderFloat("yaw", &_ctx.cam.yaw, 0.0, 360.0)
 		im.SliderFloat("roll", &_ctx.cam.roll, -30.0, 30.0)
+		im.SliderFloat("bloom_filter_radius", &_ctx.bloom_filter_radius, 0.0001, 0.1)
+		im.SliderFloat("tonemap_exposure", &_ctx.tonemap_exposure, 0.1, 10.0)
+		im.SliderFloat("tonemap_gamma", &_ctx.tonemap_gamma, 0.1, 5.0)
 	}
 	im.End()
 
