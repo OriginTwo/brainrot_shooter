@@ -785,6 +785,7 @@ GFX_3D_Renderer :: struct {
 	index_buffer: sg.Buffer,
 	shader: sg.Shader,
 	color_texture: sg.Image,
+	bright_color_texture: sg.Image,
 	depth_texture: sg.Image,
 	attachments: sg.Attachments,
 	normal_pipeline: sg.Pipeline,
@@ -882,6 +883,13 @@ GFX_create_3d_renderer :: proc(
 			pixel_format = .RG11B10F,
 			sample_count = 1,
 		})
+		ren.bright_color_texture = sg.make_image({
+			render_target = true,
+			width = i32(width),
+			height = i32(height),
+			pixel_format = .RG11B10F,
+			sample_count = 1,
+		})
 		ren.depth_texture = sg.make_image({
 			render_target = true,
 			width = i32(width),
@@ -890,9 +898,10 @@ GFX_create_3d_renderer :: proc(
 			sample_count = 1,
 		})
 		ren.attachments = sg.make_attachments({
-			colors = {0 = {
-				image = ren.color_texture,
-			}},
+			colors = {
+				0 = {image = ren.color_texture},
+				1 = {image = ren.bright_color_texture},
+			},
 			depth_stencil = {
 				image = ren.depth_texture,
 			},
@@ -936,16 +945,27 @@ GFX_create_3d_renderer :: proc(
 				compare = .LESS,
 				write_enabled = true,
 			},
-			color_count = 1,
-			colors = {0 = {
-				pixel_format = sg.query_image_pixelformat(ren.color_texture),
-				blend = {
-					enabled = true,
-					src_factor_rgb = .SRC_ALPHA,
-					dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
-					op_rgb = .ADD,
+			color_count = 2,
+			colors = {
+				0 = {
+					pixel_format = sg.query_image_pixelformat(ren.color_texture),
+					blend = {
+						enabled = true,
+						src_factor_rgb = .SRC_ALPHA,
+						dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+						op_rgb = .ADD,
+					},
 				},
-			}},
+				1 = {
+					pixel_format = sg.query_image_pixelformat(ren.bright_color_texture),
+					blend = {
+						enabled = true,
+						src_factor_rgb = .SRC_ALPHA,
+						dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+						op_rgb = .ADD,
+					},
+				},
+			},
 			primitive_type = .TRIANGLES,
 			index_type = .UINT16 when size_of(GFX__3D_Index) == 2 else .UINT32,
 			cull_mode = .BACK,
@@ -988,16 +1008,27 @@ GFX_create_3d_renderer :: proc(
 				bias = -1.0,
 				bias_slope_scale = -1.0,
 			},
-			color_count = 1,
-			colors = {0 = {
-				pixel_format = sg.query_image_pixelformat(ren.color_texture),
-				blend = {
-					enabled = true,
-					src_factor_rgb = .SRC_ALPHA,
-					dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
-					op_rgb = .ADD,
+			color_count = 2,
+			colors = {
+				0 = {
+					pixel_format = sg.query_image_pixelformat(ren.color_texture),
+					blend = {
+						enabled = true,
+						src_factor_rgb = .SRC_ALPHA,
+						dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+						op_rgb = .ADD,
+					},
 				},
-			}},
+				1 = {
+					pixel_format = sg.query_image_pixelformat(ren.bright_color_texture),
+					blend = {
+						enabled = true,
+						src_factor_rgb = .SRC_ALPHA,
+						dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+						op_rgb = .ADD,
+					},
+				},
+			},
 			primitive_type = .TRIANGLES,
 			index_type = .UINT16 when size_of(GFX__3D_Index) == 2 else .UINT32,
 			cull_mode = .BACK,
@@ -1053,6 +1084,7 @@ GFX_destroy_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 	sg.destroy_buffer(ren.index_buffer)
 	sg.destroy_shader(ren.shader)
 	sg.destroy_image(ren.color_texture)
+	sg.destroy_image(ren.bright_color_texture)
 	sg.destroy_image(ren.depth_texture)
 	sg.destroy_attachments(ren.attachments)
 	sg.destroy_pipeline(ren.normal_pipeline)
@@ -1158,10 +1190,16 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 
 	sg.begin_pass({
 		action = {
-			colors = {0 = {
-				load_action = .CLEAR,
-				clear_value = {0.0, 0.0, 0.0, 1.0},
-			}},
+			colors = {
+				0 = {
+					load_action = .CLEAR,
+					clear_value = {0.0, 0.0, 0.0, 1.0},
+				},
+				1 = {
+					load_action = .CLEAR,
+					clear_value = {0.0, 0.0, 0.0, 1.0},
+				},
+			},
 			depth = {
 				load_action = .CLEAR,
 				clear_value = 1.0,

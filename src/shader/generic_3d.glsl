@@ -50,7 +50,8 @@ in vec4 F_color;
 in vec3 F_rel_vertex_pos;
 in vec3 F_to_lights[MAX_POINT_LIGHT];
 
-out vec4 O_color;
+layout(location=0) out vec4 O_color;
+layout(location=1) out vec4 O_bright_color;
 
 layout(binding=0) uniform texture2D U_texture;
 layout(binding=0) uniform sampler U_sampler;
@@ -95,6 +96,13 @@ void main() {
 
 	O_color = vec4(total_diffuse, 1.0)*texture(sampler2D(U_texture, U_sampler), F_uv)*F_color;
 	O_color = mix(vec4(U_param.fog_color, 1.0), O_color, F_visibility);
+
+	float brightness = dot(O_color.rgb, vec3(0.2126, 0.7152, 0.0722));
+	if (brightness > 1.0) {
+		O_bright_color = vec4(O_color.rgb, 1.0);
+	} else {
+		O_bright_color = vec4(0.0, 0.0, 0.0, 1.0);
+	}
 }
 @end
 

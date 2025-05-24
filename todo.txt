@@ -29,7 +29,7 @@
 			X lighting
 			- shadow??
 		- post-processing effects
-			- bloom
+			X bloom
 			- palettize
 	X audio               [AUD]
 		X 3d
