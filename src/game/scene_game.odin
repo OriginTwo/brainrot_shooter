@@ -32,9 +32,11 @@ _ctx: struct {
 }
 
 scn_game_init :: proc() {
+	WIDTH :: 1280/4
+	HEIGHT :: 720/4
 	GFX_create_2d_renderer(&_ctx.ren2d)
-	GFX_create_3d_renderer(&_ctx.ren3d, 1280, 720)
-	GFX_create_post_fx_renderer(&_ctx.ren_fx, 1280, 720)
+	GFX_create_3d_renderer(&_ctx.ren3d, WIDTH, HEIGHT)
+	GFX_create_post_fx_renderer(&_ctx.ren_fx, WIDTH, HEIGHT)
 
 	{
 		img: GFX_Image
@@ -322,20 +324,24 @@ scn_game_draw :: proc(alpha: f32) {
 	sdl.GetWindowSize(WND_get_handle(), &win_size.x, &win_size.y)
 
 	if _ctx.disable_bloom {
+		w := f32(sg.query_image_width(_ctx.ren3d.color_texture))
+		h := f32(sg.query_image_height(_ctx.ren3d.color_texture))
 		GFX_draw_2d_texture(
 			&_ctx.ren2d,
 			_ctx.ren3d.color_texture,
 			GFX_get_default_2d_sampler(_ctx.ren2d),
-			{0.0, 720.0, 1280.0, -720.0},
+			{0.0, h, w, -h},
 			{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
 			M_COLOR_WHITE,
 		)
 	} else {
+		w := f32(sg.query_image_width(_ctx.ren_fx.additive_texture))
+		h := f32(sg.query_image_height(_ctx.ren_fx.additive_texture))
 		GFX_draw_2d_texture(
 			&_ctx.ren2d,
 			_ctx.ren_fx.additive_texture,
 			GFX_get_default_2d_sampler(_ctx.ren2d),
-			{0.0, 0.0, 1280.0, 720.0},
+			{0.0, 0.0, w, h},
 			{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
 			M_COLOR_WHITE,
 		)
