@@ -16,6 +16,7 @@ SCN_GAME_CALLBACKS :: SCN_Callbacks{scn_game_init, scn_game_uninit, scn_game_tic
 _ctx: struct {
 	ren2d: GFX_2D_Renderer,
 	ren3d: GFX_3D_Renderer,
+	ren_fx: GFX_Post_FX_Renderer,
 	font: GFX_Font,
 	tex: sg.Image,
 	smp: sg.Sampler,
@@ -28,6 +29,7 @@ _ctx: struct {
 scn_game_init :: proc() {
 	GFX_create_2d_renderer(&_ctx.ren2d)
 	GFX_create_3d_renderer(&_ctx.ren3d, 1280, 720)
+	GFX_create_post_fx_renderer(&_ctx.ren_fx, 1280, 720)
 
 	{
 		img: GFX_Image
@@ -126,6 +128,7 @@ scn_game_uninit :: proc() {
 	GFX_unload_font(&_ctx.font)
 	GFX_destroy_2d_renderer(&_ctx.ren2d)
 	GFX_destroy_3d_renderer(&_ctx.ren3d)
+	GFX_destroy_post_fx_renderer(&_ctx.ren_fx)
 }
 
 mpos: M_Vec2f32
@@ -292,15 +295,39 @@ scn_game_draw :: proc(alpha: f32) {
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = _ctx.cam.position,
-		intensity = 2.0,
-		radius = 6.0,
+		// intensity = 2.0,
+		intensity = 50.0,
+		// radius = 6.0,
+		radius = 20.0,
 		color = {1.0, 1.0, 1.0},
 		falloff = 2.0,
 	})
 
 	GFX_end_3d_renderer(&_ctx.ren3d)
 
+	GFX_do_post_fx_bloom(&_ctx.ren_fx, _ctx.ren3d.color_texture, 0.005)
+
 	GFX_begin_2d_renderer(&_ctx.ren2d)
+
+	win_size: [2]i32
+	sdl.GetWindowSize(WND_get_handle(), &win_size.x, &win_size.y)
+	GFX_draw_2d_texture(
+		&_ctx.ren2d,
+		_ctx.ren_fx.bloom_mip_chain[0].texture,
+		GFX_get_default_2d_sampler(_ctx.ren2d),
+		{0.0, 0.0, 1280.0/2.0, 720.0/2.0},
+		{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
+		M_COLOR_WHITE,
+	)
+
+	// GFX_draw_2d_texture(
+	// 	&_ctx.ren2d,
+	// 	_ctx.ren3d.color_texture,
+	// 	GFX_get_default_2d_sampler(_ctx.ren2d),
+	// 	{0.0, 720.0, 1280.0, -720.0},
+	// 	{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
+	// 	M_COLOR_WHITE,
+	// )
 
 	// GFX_draw_2d_triangle(
 	// 	&_ctx.ren2d,

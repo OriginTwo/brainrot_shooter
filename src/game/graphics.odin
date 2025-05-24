@@ -330,6 +330,7 @@ GFX_get_camera_matrix :: proc(cam: GFX_Camera) -> linalg.Matrix4f32 {
 
 	pos := cam.position + cam.offset
 
+	// view = [pos][roll][yaw][pitch]
 	mat := linalg.MATRIX4F32_IDENTITY
 	mat *= linalg.matrix4_rotate_f32(cam.pitch*math.RAD_PER_DEG, {1.0, 0.0, 0.0})
 	mat *= linalg.matrix4_rotate_f32(cam.yaw*math.RAD_PER_DEG, {0.0, 1.0, 0.0})
@@ -783,10 +784,11 @@ GFX_3D_Renderer :: struct {
 	vertex_color_buffer: sg.Buffer,
 	index_buffer: sg.Buffer,
 	shader: sg.Shader,
-	normal_pipeline: sg.Pipeline,
-	decal_pipeline: sg.Pipeline,
+	color_texture: sg.Image,
 	depth_texture: sg.Image,
 	attachments: sg.Attachments,
+	normal_pipeline: sg.Pipeline,
+	decal_pipeline: sg.Pipeline,
 
 	white_texture: sg.Image,
 	default_sampler: sg.Sampler,
@@ -871,6 +873,32 @@ GFX_create_3d_renderer :: proc(
 		})
 	}
 
+	// attachments
+	{
+		ren.color_texture = sg.make_image({
+			render_target = true,
+			width = i32(width),
+			height = i32(height),
+			pixel_format = .RG11B10F,
+			sample_count = 1,
+		})
+		ren.depth_texture = sg.make_image({
+			render_target = true,
+			width = i32(width),
+			height = i32(height),
+			pixel_format = .DEPTH,
+			sample_count = 1,
+		})
+		ren.attachments = sg.make_attachments({
+			colors = {0 = {
+				image = ren.color_texture,
+			}},
+			depth_stencil = {
+				image = ren.depth_texture,
+			},
+		})
+	}
+
 	// pipeline
 	{
 		ren.shader = sg.make_shader(shader.generic_3d_shader_desc(sg.query_backend()))
@@ -904,17 +932,20 @@ GFX_create_3d_renderer :: proc(
 				},
 			},
 			depth = {
-				pixel_format = .DEPTH,
+				pixel_format = sg.query_image_pixelformat(ren.depth_texture),
 				compare = .LESS,
 				write_enabled = true,
 			},
 			color_count = 1,
-			colors = {0 = {blend = {
-				enabled = true,
-				src_factor_rgb = .SRC_ALPHA,
-				dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
-				op_rgb = .ADD,
-			}}},
+			colors = {0 = {
+				pixel_format = sg.query_image_pixelformat(ren.color_texture),
+				blend = {
+					enabled = true,
+					src_factor_rgb = .SRC_ALPHA,
+					dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+					op_rgb = .ADD,
+				},
+			}},
 			primitive_type = .TRIANGLES,
 			index_type = .UINT16 when size_of(GFX__3D_Index) == 2 else .UINT32,
 			cull_mode = .BACK,
@@ -951,39 +982,27 @@ GFX_create_3d_renderer :: proc(
 				},
 			},
 			depth = {
-				pixel_format = .DEPTH,
+				pixel_format = sg.query_image_pixelformat(ren.depth_texture),
 				compare = .LESS_EQUAL,
 				write_enabled = false,
-				bias = -0.5,
+				bias = -1.0,
+				bias_slope_scale = -1.0,
 			},
 			color_count = 1,
-			colors = {0 = {blend = {
-				enabled = true,
-				src_factor_rgb = .SRC_ALPHA,
-				dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
-				op_rgb = .ADD,
-			}}},
+			colors = {0 = {
+				pixel_format = sg.query_image_pixelformat(ren.color_texture),
+				blend = {
+					enabled = true,
+					src_factor_rgb = .SRC_ALPHA,
+					dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+					op_rgb = .ADD,
+				},
+			}},
 			primitive_type = .TRIANGLES,
 			index_type = .UINT16 when size_of(GFX__3D_Index) == 2 else .UINT32,
 			cull_mode = .BACK,
 			face_winding = .CW,
 			sample_count = 1,
-		})
-	}
-
-	// depth texture
-	{
-		ren.depth_texture = sg.make_image({
-			render_target = true,
-			width = i32(width),
-			height = i32(height),
-			pixel_format = .DEPTH,
-			sample_count = 1,
-		})
-		ren.attachments = sg.make_attachments({
-			depth_stencil = {
-				image = ren.depth_texture,
-			},
 		})
 	}
 
@@ -1033,6 +1052,9 @@ GFX_destroy_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 	sg.destroy_buffer(ren.vertex_color_buffer)
 	sg.destroy_buffer(ren.index_buffer)
 	sg.destroy_shader(ren.shader)
+	sg.destroy_image(ren.color_texture)
+	sg.destroy_image(ren.depth_texture)
+	sg.destroy_attachments(ren.attachments)
 	sg.destroy_pipeline(ren.normal_pipeline)
 	sg.destroy_pipeline(ren.decal_pipeline)
 	sg.destroy_image(ren.white_texture)
@@ -1137,13 +1159,15 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 	sg.begin_pass({
 		action = {
 			colors = {0 = {
-				load_action = .DONTCARE,
+				load_action = .CLEAR,
+				clear_value = {0.0, 0.0, 0.0, 1.0},
 			}},
 			depth = {
-				load_action = .DONTCARE,
+				load_action = .CLEAR,
+				clear_value = 1.0,
 			},
 		},
-		swapchain = GFX_get_swapchain(),
+		attachments = ren.attachments,
 	})
 
 	// first batch is always empty
@@ -1554,6 +1578,240 @@ GFX__new_3d_batch_if_needed :: proc(
 		curr_batch.sampler = smp
 	}
 }
+
+
+///////////////////////////////////////////////////////////
+// POST-PROCESSING EFFECT RENDERER
+///////////////////////////////////////////////////////////
+GFX_BLOOM_MIP_CHAIN_LENGTH :: 4
+
+
+
+GFX_Bloom_Mip :: struct {
+	width: int,
+	height: int,
+	texture: sg.Image,
+	attachments: sg.Attachments,
+}
+
+GFX_Post_FX_Vertex :: struct {
+	pos: M_Vec2f32,
+	uv: M_Vec2f32,
+}
+
+GFX_Post_FX_Renderer :: struct {
+	vertex_buffer: sg.Buffer,
+	index_buffer: sg.Buffer,
+
+	bloom_sampler: sg.Sampler,
+	bloom_downsample_shader: sg.Shader,
+	bloom_downsample_pipeline: sg.Pipeline,
+	bloom_upsample_shader: sg.Shader,
+	bloom_upsample_pipeline: sg.Pipeline,
+	bloom_mip_chain: [GFX_BLOOM_MIP_CHAIN_LENGTH]GFX_Bloom_Mip,
+}
+
+GFX_create_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer, width, height: int) {
+	// vertex buffer
+	{
+		vertices := []struct{pos, uv: M_Vec2f32}{
+			{{-1.0,  1.0}, {0.0, 0.0}}, // 0
+			{{ 1.0,  1.0}, {1.0, 0.0}}, // 1
+			{{ 1.0, -1.0}, {1.0, 1.0}}, // 2
+			{{-1.0, -1.0}, {0.0, 1.0}}, // 3
+		}
+		vertices_byte_size := uint(len(vertices)*size_of(vertices[0]))
+		ren.vertex_buffer = sg.make_buffer({
+			size = vertices_byte_size,
+			type = .VERTEXBUFFER,
+			usage = .IMMUTABLE,
+			data = {ptr = raw_data(vertices), size = vertices_byte_size},
+		})
+
+		indices := []u16{
+			0, 1, 2,
+			0, 2, 3,
+		}
+		indices_byte_size := uint(len(indices)*size_of(indices[0]))
+		ren.index_buffer = sg.make_buffer({
+			size = indices_byte_size,
+			type = .INDEXBUFFER,
+			usage = .IMMUTABLE,
+			data = {ptr = raw_data(indices), size = indices_byte_size},
+		})
+	}
+
+	// bloom
+	{
+		ren.bloom_sampler = sg.make_sampler({
+			min_filter = .LINEAR,
+			mag_filter = .LINEAR,
+			wrap_u = .CLAMP_TO_EDGE,
+			wrap_v = .CLAMP_TO_EDGE,
+		})
+
+		ren.bloom_downsample_shader = sg.make_shader(shader.bloom_downsample_shader_desc(sg.query_backend()))
+		ren.bloom_downsample_pipeline = sg.make_pipeline({
+			shader = ren.bloom_downsample_shader,
+			layout = {
+				attrs = {
+					shader.ATTR_bloom_bloom_downsample_A_position = {
+						format = .FLOAT2,
+					},
+					shader.ATTR_bloom_bloom_downsample_A_uv = {
+						format = .FLOAT2,
+					},
+				},
+			},
+			depth = {
+				pixel_format = .NONE,
+			},
+			color_count = 1,
+			colors = {0 = {
+				pixel_format = .RG11B10F,
+				blend = {
+					enabled = true,
+					src_factor_rgb = .SRC_ALPHA,
+					dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+					op_rgb = .ADD,
+				},
+			}},
+			primitive_type = .TRIANGLES,
+			index_type = .UINT16,
+			sample_count = 1,
+		})
+
+		ren.bloom_upsample_shader = sg.make_shader(shader.bloom_upsample_shader_desc(sg.query_backend()))
+		ren.bloom_upsample_pipeline = sg.make_pipeline({
+			shader = ren.bloom_upsample_shader,
+			layout = {
+				attrs = {
+					shader.ATTR_bloom_bloom_upsample_A_position = {
+						format = .FLOAT2,
+					},
+					shader.ATTR_bloom_bloom_upsample_A_uv = {
+						format = .FLOAT2,
+					},
+				},
+			},
+			depth = {
+				pixel_format = .NONE,
+			},
+			color_count = 1,
+			colors = {0 = {
+				pixel_format = .RG11B10F,
+				blend = {
+					enabled = true,
+					src_factor_rgb = .SRC_ALPHA,
+					dst_factor_rgb = .ONE_MINUS_SRC_ALPHA,
+					op_rgb = .ADD,
+				},
+			}},
+			primitive_type = .TRIANGLES,
+			index_type = .UINT16,
+			sample_count = 1,
+		})
+
+		mip_width := width
+		mip_height := height
+
+		for &mip in ren.bloom_mip_chain {
+			mip_width /= 2
+			mip_height /= 2
+
+			mip.width = mip_width
+			mip.height = mip_height
+			mip.texture = sg.make_image({
+				render_target = true,
+				width = i32(mip_width),
+				height = i32(mip_height),
+				pixel_format = .RG11B10F,
+			})
+			mip.attachments = sg.make_attachments({
+				colors = {0 = {
+					image = mip.texture,
+				}},
+			})
+		}
+	}
+}
+
+GFX_destroy_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer) {
+	sg.destroy_buffer(ren.vertex_buffer)
+
+	sg.destroy_sampler(ren.bloom_sampler)
+	sg.destroy_shader(ren.bloom_downsample_shader)
+	sg.destroy_pipeline(ren.bloom_downsample_pipeline)
+	sg.destroy_shader(ren.bloom_upsample_shader)
+	sg.destroy_pipeline(ren.bloom_upsample_pipeline)
+	for &mip in ren.bloom_mip_chain {
+		sg.destroy_image(mip.texture)
+		sg.destroy_attachments(mip.attachments)
+	}
+}
+
+GFX_do_post_fx_bloom :: proc(ren: ^GFX_Post_FX_Renderer, src_texture: sg.Image, filter_radius: f32) {
+	mip_texture := src_texture
+	mip_resolution := M_Vec2f32{f32(sg.query_image_width(src_texture)), f32(sg.query_image_height(src_texture))}
+
+	// downsample
+	for mip in ren.bloom_mip_chain {
+		sg.begin_pass({
+			action = {colors = {0 = {
+				load_action = .CLEAR,
+				clear_value = {0.0, 0.0, 0.0, 1.0},
+			}}},
+			attachments = mip.attachments,
+		})
+		sg.apply_pipeline(ren.bloom_downsample_pipeline)
+		sg.apply_bindings({
+			vertex_buffers = {0 = ren.vertex_buffer},
+			index_buffer = ren.index_buffer,
+			images = {shader.IMG_bloom_U_src_texture = mip_texture},
+			samplers = {shader.SMP_bloom_U_src_sampler = ren.bloom_sampler},
+		})
+		uniform := shader.Bloom_Downsample_Fragment_Param{
+			src_resolution = mip_resolution,
+		}
+		sg.apply_uniforms(shader.UB_bloom_Downsample_Fragment_Param, {&uniform, size_of(uniform)})
+		sg.apply_viewport(0, 0, i32(mip.width), i32(mip.height), false)
+		sg.draw(0, 6, 1)
+		sg.end_pass()
+
+		mip_texture = mip.texture
+		mip_resolution = {f32(mip.width), f32(mip.height)}
+	}
+
+	// upsample
+	for i := len(ren.bloom_mip_chain) - 1; i > 0; i -= 1 {
+		mip := ren.bloom_mip_chain[i]
+		next_mip := ren.bloom_mip_chain[i - 1]
+
+		sg.begin_pass({
+			action = {colors = {0 = {
+				load_action = .CLEAR,
+				clear_value = {0.0, 0.0, 0.0, 1.0},
+			}}},
+			attachments = next_mip.attachments,
+		})
+		sg.apply_pipeline(ren.bloom_upsample_pipeline)
+		sg.apply_bindings({
+			vertex_buffers = {0 = ren.vertex_buffer},
+			index_buffer = ren.index_buffer,
+			images = {shader.IMG_bloom_U_src_texture = mip.texture},
+			samplers = {shader.SMP_bloom_U_src_sampler = ren.bloom_sampler},
+		})
+		uniform := shader.Bloom_Upsample_Fragment_Param{
+			filter_radius = filter_radius,
+		}
+		sg.apply_uniforms(shader.UB_bloom_Upsample_Fragment_Param, {&uniform, size_of(uniform)})
+		sg.apply_viewport(0, 0, i32(next_mip.width), i32(next_mip.height), false)
+		sg.draw(0, 6, 1)
+		sg.end_pass()
+	}
+}
+
+
 
 /*
 - level mesh

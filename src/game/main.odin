@@ -35,6 +35,8 @@ main :: proc() {
 	WND_create(WINDOW_TITLE, {WINDOW_WIDTH, WINDOW_HEIGHT}, flags = {.RESIZABLE})
 	defer WND_destroy()
 
+	sdl.SetWindowMinimumSize(WND_get_handle(), 640, 360)
+
 	GFX_init(WND_get_handle(), WND_get_gl())
 	defer GFX_uninit()
 
