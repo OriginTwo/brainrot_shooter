@@ -663,6 +663,18 @@ GFX_draw_2d_rect :: proc(
 	ren.num_indices += 6
 }
 
+GFX_draw_2d_rect_line :: proc(
+	ren: ^GFX_2D_Renderer,
+	rect: M_Rect,
+	color: M_Color,
+	thick: f32 = 2.0,
+) {
+	GFX_draw_2d_rect(ren, {rect.x - thick/2.0, rect.y - thick/2.0, rect.width + thick, thick}, color)
+	GFX_draw_2d_rect(ren, {rect.x - thick/2.0, rect.y + rect.height - thick/2.0, rect.width + thick, thick}, color)
+	GFX_draw_2d_rect(ren, {rect.x - thick/2.0, rect.y + thick/2.0, thick, rect.height - thick}, color)
+	GFX_draw_2d_rect(ren, {rect.x + rect.width - thick/2.0, rect.y + thick/2.0, thick, rect.height - thick}, color)
+}
+
 GFX_draw_2d_texture :: proc(
 	ren: ^GFX_2D_Renderer,
 	texture: sg.Image,
@@ -1775,7 +1787,10 @@ GFX_create_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer, width, height: i
 				}},
 			})
 		}
+	}
 
+	// additive
+	{
 		ren.additive_texture = sg.make_image({
 			render_target = true,
 			width = i32(width),

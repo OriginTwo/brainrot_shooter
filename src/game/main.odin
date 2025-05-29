@@ -52,9 +52,9 @@ main :: proc() {
 	SCN_init()
 	defer SCN_uninit()
 	SCN_register(SCN_GAME_HANDLE, SCN_GAME_CALLBACKS)
-	// when DEV_BUILD {
-	// 	SCN_register(SCN_EDITOR_HANDLE, SCN_EDITOR_CALLBACKS)
-	// }
+	when DEV_BUILD {
+		SCN_register(SCN_EDITOR_HANDLE, SCN_EDITOR_CALLBACKS)
+	}
 	SCN_set_initial(SCN_GAME_HANDLE)
 
 	frame_input_state: INP_State

@@ -41,13 +41,13 @@
 	- entity              [ENT]
 
 # level editor
-	- tile
-		- place
-		- remove
+	NOTE: when sectors are overlapping, assume that the current sector is the smallest one
+	- sector
+		X place
 		- select
 			- move
 			- deselect
-		- properties (height, is it wall/door?, tag link)
+		- properties (floor height, ceiling height, link, etc.)
 	- object
 		- place
 		- remove
