@@ -85,6 +85,7 @@ mpos: M_Vec2f32
 scn_game_tick :: proc(input: INP_State, delta: f32) {
 	when DEV_BUILD {
 		if INP_is_key_pressed(input, .F1) {
+			WND_lock_mouse(false)
 			SCN_change(SCN_EDITOR_HANDLE)
 		}
 	}
@@ -98,12 +99,7 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	if INP_is_key_pressed(input, .TAB) {
 		@(static) lock_mouse := false
 		lock_mouse = !lock_mouse
-		window := WND_get_handle()
-		win_width: i32
-		win_height: i32
-		sdl.GetWindowSize(window, &win_width, &win_height)
-		_ = sdl.SetWindowRelativeMouseMode(window, lock_mouse)
-		sdl.WarpMouseInWindow(window, f32(win_width/2), f32(win_height/2))
+		WND_lock_mouse(lock_mouse)
 	}
 
 	mdelta := INP_get_mouse_delta(input)

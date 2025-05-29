@@ -69,6 +69,16 @@ WND_handle_event :: proc(ev: ^sdl.Event) {
 	}
 }
 
+WND_lock_mouse :: proc(val: bool) {
+	_ = sdl.SetWindowRelativeMouseMode(WND__ctx.window, val)
+	if WND__ctx.mouse_locked && !val {
+		win_size: [2]i32
+		sdl.GetWindowSize(WND__ctx.window, &win_size.x, &win_size.y)
+		sdl.WarpMouseInWindow(WND__ctx.window, f32(win_size.x/2), f32(win_size.y/2))
+	}
+	WND__ctx.mouse_locked = val
+}
+
 
 
 @(private="file")
@@ -76,4 +86,5 @@ WND__ctx: struct {
 	window: ^sdl.Window,
 	gl_ctx: sdl.GLContext,
 	should_quit: bool,
+	mouse_locked: bool,
 }
