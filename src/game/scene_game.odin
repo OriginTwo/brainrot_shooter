@@ -27,16 +27,12 @@ _ctx: struct {
 	bloom_filter_radius: f32,
 	tonemap_exposure: f32,
 	tonemap_gamma: f32,
-
-	// e: PART_Handle,
 }
 
 scn_game_init :: proc() {
-	WIDTH :: 1280/4
-	HEIGHT :: 720/4
 	GFX_create_2d_renderer(&_ctx.ren2d)
-	GFX_create_3d_renderer(&_ctx.ren3d, WIDTH, HEIGHT)
-	GFX_create_post_fx_renderer(&_ctx.ren_fx, WIDTH, HEIGHT)
+	GFX_create_3d_renderer(&_ctx.ren3d, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+	GFX_create_post_fx_renderer(&_ctx.ren_fx, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
 
 	{
 		img: GFX_Image
@@ -68,86 +64,29 @@ scn_game_init :: proc() {
 		GFX_unload_image(&img)
 	}
 
-	_ctx.cam.fovy = math.PI/4.0
+	_ctx.cam.position.y = 1.0
+	_ctx.cam.fovy = math.PI/2.0
 
 	_ctx.bloom_filter_radius = 0.01
 	_ctx.tonemap_exposure = 1.2
 	_ctx.tonemap_gamma = 1.0
-
-	// _ctx.e = PART_emitter_create({
-	// 	particle_count = 24,
-	// 	// particle_shape = PART_Particle_Shape_Spark{
-	// 	// 	min_half_width = 1.0,
-	// 	// 	max_half_width = 2.0,
-	// 	// 	min_head_length = 2.0,
-	// 	// 	max_head_length = 4.0,
-	// 	// 	min_tail_length = 6.0,
-	// 	// 	max_tail_length = 10.0,
-	// 	// },
-	// 	particle_shape = PART_Particle_Shape_Square{
-	// 		min_length = 4.0,
-	// 		max_length = 8.0,
-	// 	},
-	// 	emission_shape = PART_Emission_Shape_Point{
-	// 	},
-	// 	emission_spread = 30.0,
-	// 	min_lifetime = 0.5,
-	// 	max_lifetime = 1.0,
-	// 	min_initial_rotation = -360.0,
-	// 	max_initial_rotation = 360.0,
-	// 	min_initial_linear_vel = 150.0,
-	// 	max_initial_linear_vel = 200.0,
-	// 	min_initial_angular_vel = 180.0,
-	// 	max_initial_angular_vel = 360.0,
-	// 	min_initial_radial_vel = 0.0,
-	// 	max_initial_radial_vel = 0.0,
-	// 	min_initial_tangential_vel = 0.0,
-	// 	max_initial_tangential_vel = 0.0,
-	// 	min_linear_accel = 0.0,
-	// 	max_linear_accel = 0.0,
-	// 	min_angular_accel = 0.0,
-	// 	max_angular_accel = 0.0,
-	// 	min_radial_accel = 0.0,
-	// 	max_radial_accel = 0.0,
-	// 	min_tangential_accel = 0.0,
-	// 	max_tangential_accel = 0.0,
-	// 	min_damping = 200.0,
-	// 	max_damping = 300.0,
-	// 	scale_curve = {
-	// 		{0.000000, 0.000000}, {0.000000, 0.501736}, {0.003681, 1.000000},
-	// 		{0.153681, 1.000000}, {0.303681, 1.000000}, {0.902778, 0.000000},
-	// 		{1.000000, 0.000000},
-	// 	},
-	// 	color_curve = {
-	// 		{0.0, 1.0, 1.0, 1.0, 1.0},
-	// 		{0.2, 1.0, 0.8, 0.2, 1.0},
-	// 		{0.6, 1.0, 0.2, 0.2, 1.0},
-	// 		{0.8, 0.2, 0.2, 0.2, 1.0},
-	// 	},
-	// })
-
-	// PART_emitter_set_direction(_ctx.e, {1.0, 0.0})
-	// PART_emitter_set_position(_ctx.e, {VIEWPORT_WIDTH, VIEWPORT_HEIGHT}/2.0)
-	// PART_emitter_start(_ctx.e)
 }
 
 scn_game_uninit :: proc() {
-	// PART_emitter_destroy(_ctx.e)
-	// PART_destroy_all()
-
 	sg.destroy_image(_ctx.tex)
 	GFX_unload_font(&_ctx.font)
 	GFX_destroy_2d_renderer(&_ctx.ren2d)
 	GFX_destroy_3d_renderer(&_ctx.ren3d)
 	GFX_destroy_post_fx_renderer(&_ctx.ren_fx)
+	_ctx = {}
 }
 
 mpos: M_Vec2f32
 scn_game_tick :: proc(input: INP_State, delta: f32) {
 	when DEV_BUILD {
-		// if INP_is_key_pressed(.F1) {
-		// 	SCN_change(SCN_EDITOR_HANDLE)
-		// }
+		if INP_is_key_pressed(input, .F1) {
+			SCN_change(SCN_EDITOR_HANDLE)
+		}
 	}
 
 	mpos = INP_get_mouse_pos(input)
@@ -194,13 +133,9 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	}
 	bob_t = clamp(bob_t, 0.0, 1.0)
 	_ctx.cam.offset.y = 0.06*bob_t*math.sin(f32(TIME_now())*14.0)
-
-	// PART_tick(delta)
 }
 
 scn_game_draw :: proc(alpha: f32) {
-	// PART_draw(alpha)
-
 	GFX_begin_frame()
 	GFX_clear_background(M_FCOLOR_BLACK)
 
@@ -213,13 +148,6 @@ scn_game_draw :: proc(alpha: f32) {
 		{ 100.0, -1.0,  100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
 		{-100.0, -1.0,  100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
 	)
-
-	// GFX_draw_3d_triangle(
-	// 	&_ctx.ren3d,
-	// 	{ 0.0,  1.0, -5.0}, {0.0, 0.0, 0.0}, {255, 0, 0, 255},
-	// 	{-1.0, -1.0, -5.0}, {0.0, 0.0, 0.0}, {0, 255, 0, 255},
-	// 	{ 1.0, -1.0, -5.0}, {0.0, 0.0, 0.0}, {0, 0, 255, 255},
-	// )
 
 	GFX_draw_3d_billboard_triangle(
 		&_ctx.ren3d,
@@ -346,34 +274,6 @@ scn_game_draw :: proc(alpha: f32) {
 			M_COLOR_WHITE,
 		)
 	}
-
-	// GFX_draw_2d_triangle(
-	// 	&_ctx.ren2d,
-	// 	{100.0, 100.0}, {255, 0, 0, 255},
-	// 	{600.0, 200.0}, {0, 255, 0, 255},
-	// 	{300.0, 500.0}, {0, 0, 255, 255},
-	// )
-
-	// GFX_set_2d_layer(&_ctx.ren2d, -1)
-
-	// GFX_draw_2d_rect(
-	// 	&_ctx.ren2d,
-	// 	{mpos.x, mpos.y, 150.0, 200.0},
-	// 	// M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
-	// 	M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, 1.0})),
-	// )
-
-	// tex_width := f32(sg.query_image_width(_ctx.tex))
-	// tex_height := f32(sg.query_image_height(_ctx.tex))
-
-	// GFX_draw_2d_texture(
-	// 	&_ctx.ren2d,
-	// 	_ctx.tex,
-	// 	_ctx.smp,
-	// 	{0.0, 0.0, tex_width, tex_height},
-	// 	{mpos.x, mpos.y, 500.0, 500.0},
-	// 	M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, math.cos(f32(TIME_now())*5.0)*0.5 + 0.5})),
-	// )
 
 	GFX_set_2d_layer(&_ctx.ren2d, 10)
 
