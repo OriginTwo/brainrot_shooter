@@ -104,9 +104,8 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 
 	mdelta := INP_get_mouse_delta(input)
 
-	MOUSE_SENS :: 0.05
-	_ctx.cam.pitch += mdelta.y*MOUSE_SENS
-	_ctx.cam.yaw += mdelta.x*MOUSE_SENS
+	_ctx.cam.pitch += mdelta.y*DEFAULT_MOUSE_SENSITIVITY
+	_ctx.cam.yaw += mdelta.x*DEFAULT_MOUSE_SENSITIVITY
 
 	_ctx.cam.pitch = clamp(_ctx.cam.pitch, -89.0, 89.0)
 	_ctx.cam.yaw = math.mod(_ctx.cam.yaw, 360.0)

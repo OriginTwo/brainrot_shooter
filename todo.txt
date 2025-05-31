@@ -48,7 +48,8 @@
 			X move
 			X deselect
 		X properties (floor height, ceiling height, link, etc.)
-		- draw
+		X draw 2d view
+		- draw 3d view
 		- assign sector to chunks for optimization (for collision, editor, etc.)
 	- object
 		- place
