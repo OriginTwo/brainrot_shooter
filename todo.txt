@@ -44,10 +44,12 @@
 	NOTE: when sectors are overlapping, assume that the current sector is the smallest one
 	- sector
 		X place
-		- select
-			- move
-			- deselect
-		- properties (floor height, ceiling height, link, etc.)
+		X select
+			X move
+			X deselect
+		X properties (floor height, ceiling height, link, etc.)
+		- draw
+		- assign sector to chunks for optimization (for collision, editor, etc.)
 	- object
 		- place
 		- remove
@@ -55,6 +57,7 @@
 			- move
 			- deselect
 		- properties (custom properties??)
+		- draw
 		NOTE: ex object: switch, enemy spawner, gun, health
 	- tool
 		- select

@@ -284,10 +284,9 @@ scn_game_draw :: proc(alpha: f32) {
 
 	GFX_end_2d_renderer(&_ctx.ren2d)
 
-	// im.ShowDemoWindow(nil)
-
-	im.SetNextWindowSize({200, 400})
-	if im.Begin("Debug") {
+	im.SetNextWindowSize({200.0, 400.0}, .Once)
+	im.Begin("Debug")
+	{
 		im.SliderFloat("pos_x", &_ctx.cam.position.x, -10.0, 10.0)
 		im.SliderFloat("pos_y", &_ctx.cam.position.y, -10.0, 10.0)
 		im.SliderFloat("pos_z", &_ctx.cam.position.z, -10.0, 10.0)

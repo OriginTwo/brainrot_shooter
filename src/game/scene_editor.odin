@@ -13,6 +13,7 @@ import im "lib:imgui"
 import sg "lib:sokol/gfx"
 
 LVL_UNIT_PER_GRID :: 0.5
+LVL_MAX_SECTOR_SIZE :: 65535
 
 LVL_Sector :: struct {
 	id: int,
@@ -54,6 +55,9 @@ _ctx: struct {
 
 	mouse_pressed_grid: [2]int,
 
+	hovering_sector_id: int,
+	selected_sector_id: int,
+	selected_sector_window_open: bool,
 	is_placing_sector: bool,
 	placing_sector_p1: [2]int,
 	placing_sector_p2: [2]int,
@@ -71,6 +75,9 @@ scn_editor_init :: proc() {
 	_ctx.cam.fovy = math.PI/2.0
 
 	_ctx.mouse_pressed_grid = _INVALID_GRID
+
+	_ctx.hovering_sector_id = -1
+	_ctx.selected_sector_id = -1
 
 	{
 		win_size: [2]i32
@@ -91,7 +98,11 @@ scn_editor_tick :: proc(input: INP_State, delta: f32) {
 		SCN_change(SCN_GAME_HANDLE)
 	}
 
-	if _ctx.is_3d_preview {
+	if _ctx.is_3d_preview ||
+		im.IsAnyItemHovered() ||
+		im.IsAnyItemActive() ||
+		im.IsWindowHovered(im.HoveredFlags_AnyWindow)
+	{
 		return
 	}
 
@@ -116,11 +127,34 @@ scn_editor_tick :: proc(input: INP_State, delta: f32) {
 		grid_mouse_pos = mp/_2D_GRID_SIZE
 	}
 
+	if !INP_is_mouse_down(input, .Left) && INP_get_mouse_delta(input) != {} {
+		// TODO: chunk optimization
+		hovering_sector_id := -1
+		hovering_sector_area := 999999
+
+		for sector in _ctx.level.sectors {
+			if (sector.position.x <= grid_mouse_pos.x && grid_mouse_pos.x < sector.position.x + sector.size.x) &&
+				(sector.position.y <= grid_mouse_pos.y && grid_mouse_pos.y < sector.position.y + sector.size.y)
+			{
+				area := sector.size.x*sector.size.y
+				if area < hovering_sector_area {
+					hovering_sector_id = sector.id
+					hovering_sector_area = area
+				}
+			}
+		}
+
+		_ctx.hovering_sector_id = hovering_sector_id
+	}
+
 	if INP_is_mouse_pressed(input, .Left) {
 		_ctx.mouse_pressed_grid = grid_mouse_pos
 	}
 
-	if INP_is_mouse_down(input, .Left) && !_ctx.is_placing_sector && grid_mouse_pos - _ctx.mouse_pressed_grid != {} {
+	if INP_is_mouse_down(input, .Left) &&
+		!_ctx.is_placing_sector &&
+		grid_mouse_pos - _ctx.mouse_pressed_grid != {}
+	{
 		_ctx.is_placing_sector = true
 		_ctx.placing_sector_p1 = _ctx.mouse_pressed_grid
 		_ctx.placing_sector_p2 = grid_mouse_pos
@@ -155,6 +189,8 @@ scn_editor_tick :: proc(input: INP_State, delta: f32) {
 			_ctx.placing_sector_p2 = _INVALID_GRID
 		} else {
 			// selecting sector
+			_ctx.selected_sector_id = _ctx.hovering_sector_id
+			_ctx.selected_sector_window_open = _ctx.hovering_sector_id != -1
 		}
 
 		_ctx.mouse_pressed_grid = _INVALID_GRID
@@ -205,17 +241,24 @@ scn_editor_draw :: proc(alpha: f32) {
 		// draw sector
 		GFX_set_2d_layer(&_ctx.ren2d, 0)
 		for sector in _ctx.level.sectors {
-			GFX_draw_2d_rect_line(
-				&_ctx.ren2d,
-				{
-					f32(sector.position.x)*_2D_GRID_SIZE - _ctx.offset_2d.x,
-					f32(sector.position.y)*_2D_GRID_SIZE - _ctx.offset_2d.y,
-					f32(sector.size.x)*_2D_GRID_SIZE,
-					f32(sector.size.y)*_2D_GRID_SIZE,
-				},
-				{255, 255, 255, 200},
-				2.0,
-			)
+			rect := M_Rect{
+				f32(sector.position.x)*_2D_GRID_SIZE - _ctx.offset_2d.x,
+				f32(sector.position.y)*_2D_GRID_SIZE - _ctx.offset_2d.y,
+				f32(sector.size.x)*_2D_GRID_SIZE,
+				f32(sector.size.y)*_2D_GRID_SIZE,
+			}
+
+			if _ctx.hovering_sector_id == sector.id || _ctx.selected_sector_id == sector.id {
+				color := M_Color{255, 200, 25, 100}  // hover color by default
+
+				if _ctx.selected_sector_id == sector.id {
+					color = {255, 100, 25, u8((math.sin(8.0*f32(TIME_now()))*0.3 + 0.7)*100.0)}
+				}
+
+				GFX_draw_2d_rect(&_ctx.ren2d, rect, color)
+			}
+
+			GFX_draw_2d_rect_line(&_ctx.ren2d, rect, {255, 255, 255, 200}, 2.0)
 		}
 
 		// draw sector preview
@@ -341,7 +384,7 @@ scn_editor_draw :: proc(alpha: f32) {
 		GFX_end_2d_renderer(&_ctx.ren2d)
 	}
 
-	im.SetNextWindowSize({200, 400})
+	im.SetNextWindowSize({200, 400}, .Once)
 	if im.Begin("Debug") {
 		im.SliderFloat("pos_x", &_ctx.cam.position.x, -10.0, 10.0)
 		im.SliderFloat("pos_y", &_ctx.cam.position.y, -10.0, 10.0)
@@ -351,6 +394,70 @@ scn_editor_draw :: proc(alpha: f32) {
 		im.SliderFloat("roll", &_ctx.cam.roll, -30.0, 30.0)
 	}
 	im.End()
+
+	im.SetNextWindowSize({300.0, 400.0}, .Once)
+	if _ctx.selected_sector_window_open {
+		selected_sector := &_ctx.level.sectors[_ctx.selected_sector_id]
+		im.Begin("SELECTED SECTOR", &_ctx.selected_sector_window_open)
+		im.Text("ID: %d", _ctx.selected_sector_id)
+		{
+			SPACING :: 4.0
+			x := i32(selected_sector.position.x)
+			im.Text("POS_X:"); im.SameLine()
+			im.SetNextItemWidth(50.0)
+			im.DragInt("###SELECTED_SECTOR_POS_X", &x); im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_POS_X_DECREMENT") {x -= 1} im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_POS_X_INCREMENT") {x += 1}
+			selected_sector.position.x = int(x)
+
+			y := i32(selected_sector.position.y)
+			im.Text("POS_Y:"); im.SameLine()
+			im.SetNextItemWidth(50.0)
+			im.DragInt("###SELECTED_SECTOR_POS_Y", &y); im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_POS_Y_DECREMENT") {y -= 1} im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_POS_Y_INCREMENT") {y += 1}
+			selected_sector.position.y = int(y)
+
+			width := i32(selected_sector.size.x)
+			im.Text("WIDTH:"); im.SameLine()
+			im.SetNextItemWidth(50.0)
+			im.DragInt("###SELECTED_SECTOR_WIDTH", &width, v_min = 1, v_max = LVL_MAX_SECTOR_SIZE); im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_WIDTH_DECREMENT") && width > 1                       {width -= 1} im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_WIDTH_INCREMENT") && width < LVL_MAX_SECTOR_SIZE - 1 {width += 1}
+			selected_sector.size.x = int(width)
+
+			height := i32(selected_sector.size.y)
+			im.Text("HEIGHT:"); im.SameLine()
+			im.SetNextItemWidth(50.0)
+			im.DragInt("###SELECTED_SECTOR_HEIGHT", &height, v_min = 1, v_max = LVL_MAX_SECTOR_SIZE); im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_HEIGHT_DECREMENT") && height > 1                       {height -= 1} im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_HEIGHT_INCREMENT") && height < LVL_MAX_SECTOR_SIZE - 1 {height += 1}
+			selected_sector.size.y = int(height)
+
+			floor_and_ceiling_increment := f32(LVL_UNIT_PER_GRID/2.0)
+
+			floor_height_max := selected_sector.ceiling_height - floor_and_ceiling_increment
+			im.Text("FLOOR_HEIGHT:"); im.SameLine()
+			im.SetNextItemWidth(80.0)
+			im.DragFloat("###SELECTED_SECTOR_FLOOR_HEIGHT", &selected_sector.floor_height, floor_and_ceiling_increment, -1000.0, floor_height_max); im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_FLOOR_HEIGHT_DECREMENT") {selected_sector.floor_height -= floor_and_ceiling_increment} im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_FLOOR_HEIGHT_INCREMENT") {selected_sector.floor_height += floor_and_ceiling_increment}
+			selected_sector.floor_height = min(selected_sector.floor_height, floor_height_max)
+
+			ceiling_height_min := selected_sector.floor_height + floor_and_ceiling_increment
+			im.Text("CEILING_HEIGHT:"); im.SameLine()
+			im.SetNextItemWidth(80.0)
+			im.DragFloat("###SELECTED_SECTOR_CEILING_HEIGHT", &selected_sector.ceiling_height, floor_and_ceiling_increment, ceiling_height_min, 1000.0); im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_CEILING_HEIGHT_DECREMENT") {selected_sector.ceiling_height -= floor_and_ceiling_increment} im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_CEILING_HEIGHT_INCREMENT") {selected_sector.ceiling_height += floor_and_ceiling_increment}
+			selected_sector.ceiling_height = max(selected_sector.ceiling_height, ceiling_height_min)
+		}
+		im.End()
+	}
+
+	if !_ctx.selected_sector_window_open {
+		_ctx.selected_sector_id = -1
+	}
 
 	GFX_end_frame()
 
