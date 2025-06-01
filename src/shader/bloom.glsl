@@ -75,7 +75,7 @@ out vec4 O_color;
 
 layout(binding=0) uniform texture2D U_downsampled_texture;  // downsampled of current mip
 layout(binding=1) uniform texture2D U_upsampled_texture;    // upsampled of previous mip
-layout(binding=1) uniform sampler U_sampler;
+layout(binding=0) uniform sampler U_sampler;
 layout(binding=0) uniform Upsample_Fragment_Param {
 	float filter_radius;
 } U_param;
@@ -112,5 +112,37 @@ void main() {
 @end
 
 
+@fs bloom_compose_frag
+in vec2 F_uv;
+
+out vec4 O_color;
+
+layout(binding=0) uniform texture2D U_color_texture;
+layout(binding=1) uniform texture2D U_bloom_texture;
+layout(binding=0) uniform sampler U_sampler;
+
+// https://github.com/dmnsgn/glsl-tone-map/blob/main/aces.glsl
+vec3 aces(vec3 x) {
+	const float a = 2.51;
+	const float b = 0.03;
+	const float c = 2.43;
+	const float d = 0.59;
+	const float e = 0.14;
+	return clamp((x*(a*x + b))/(x*(c*x + d) + e), 0.0, 1.0);
+}
+
+void main() {
+	vec3 scene_color = texture(sampler2D(U_color_texture, U_sampler), F_uv).rgb;
+	vec3 bloom_color = texture(sampler2D(U_bloom_texture, U_sampler), F_uv).rgb;
+	vec3 hdr_color = scene_color + bloom_color;
+	vec3 tonemapped_color = aces(hdr_color);
+	// vec3 gamma_corrected_color = pow(tonemapped_color, vec3(1.0/2.2));
+	vec3 final_color = tonemapped_color;
+	O_color = vec4(final_color, 1.0);
+}
+@end
+
+
 @program bloom_downsample bloom_vert bloom_downsample_frag
 @program bloom_upsample bloom_vert bloom_upsample_frag
+@program bloom_compose bloom_vert bloom_compose_frag

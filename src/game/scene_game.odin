@@ -28,8 +28,8 @@ _ctx: struct {
 
 scn_game_init :: proc() {
 	GFX_create_2d_renderer(&_ctx.ren2d)
-	GFX_create_3d_renderer(&_ctx.ren3d, WINDOW_WIDTH, WINDOW_HEIGHT)
-	GFX_create_post_fx_renderer(&_ctx.ren_fx, WINDOW_WIDTH, WINDOW_HEIGHT)
+	GFX_create_3d_renderer(&_ctx.ren3d, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+	GFX_create_post_fx_renderer(&_ctx.ren_fx, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
 
 	{
 		img: GFX_Image

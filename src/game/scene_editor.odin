@@ -489,17 +489,6 @@ _draw_3d_view :: proc(alpha: f32) {
 
 	GFX_draw_post_fx(&_ctx.ren_fx, &_ctx.ren2d, &_ctx.ren3d)
 
-	w := f32(sg.query_image_width(_ctx.ren_fx.additive_texture))
-	h := f32(sg.query_image_height(_ctx.ren_fx.additive_texture))
-	GFX_draw_2d_texture(
-		&_ctx.ren2d,
-		_ctx.ren_fx.additive_texture,
-		GFX_get_default_2d_sampler(_ctx.ren2d),
-		{0.0, 0.0, w, h},
-		{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
-		M_COLOR_WHITE,
-	)
-
 	GFX_set_2d_layer(&_ctx.ren2d, 10)
 
 	GFX_end_2d_renderer(&_ctx.ren2d)
