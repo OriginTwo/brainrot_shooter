@@ -22,20 +22,20 @@ out vec4 O_color;
 
 layout(binding=0) uniform texture2D U_texture;
 layout(binding=0) uniform sampler U_sampler;
-layout(binding=0) uniform Fragment_Param {
-	float exposure;
-	float gamma;
-} U_param;
 
-vec3 reinhard(vec3 x) {
-	vec3 mapped = vec3(1.0) - exp(-x*U_param.exposure);
-	mapped = pow(mapped, vec3(1.0/U_param.gamma));
-	return mapped;
+// https://github.com/dmnsgn/glsl-tone-map/blob/main/aces.glsl
+vec3 aces(vec3 x) {
+	const float a = 2.51;
+	const float b = 0.03;
+	const float c = 2.43;
+	const float d = 0.59;
+	const float e = 0.14;
+	return clamp((x*(a*x + b))/(x*(c*x + d) + e), 0.0, 1.0);
 }
 
 void main() {
 	vec4 color = texture(sampler2D(U_texture, U_sampler), F_uv);
-	O_color = vec4(reinhard(color.rgb), color.a);
+	O_color = vec4(aces(color.rgb), color.a);
 }
 @end
 

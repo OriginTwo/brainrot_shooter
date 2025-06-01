@@ -485,17 +485,9 @@ _draw_3d_view :: proc(alpha: f32) {
 
 	GFX_end_3d_renderer(&_ctx.ren3d)
 
-	GFX_do_post_fx_bloom(&_ctx.ren_fx, _ctx.ren3d.bright_color_texture, 0.01)
-	GFX_do_post_fx_tonemap(&_ctx.ren_fx, _ctx.ren_fx.bloom_mip_chain[0].texture, 1.2, 1.0)
-	GFX_do_post_fx_additive(
-		&_ctx.ren_fx,
-		_ctx.ren3d.color_texture,
-		_ctx.ren_fx.tonemap_texture,
-		_ctx.ren_fx.bloom_sampler,
-		_ctx.ren_fx.bloom_sampler,
-	)
-
 	GFX_begin_2d_renderer(&_ctx.ren2d)
+
+	GFX_draw_post_fx(&_ctx.ren_fx, &_ctx.ren2d, &_ctx.ren3d)
 
 	w := f32(sg.query_image_width(_ctx.ren_fx.additive_texture))
 	h := f32(sg.query_image_height(_ctx.ren_fx.additive_texture))
@@ -516,7 +508,7 @@ _draw_3d_view :: proc(alpha: f32) {
 @(private="file")
 _do_3d_view_ui :: proc() {
 	im.SetNextWindowPos(_MAIN_UI_WINDOW_POSITION + _UI_WINDOW_OPEN_OFFSET, .FirstUseEver)
-	im.SetNextWindowSize({300.0, 400.0}, .FirstUseEver)
+	im.SetNextWindowSize({200.0, 400.0}, .FirstUseEver)
 	im.Begin("3D_VIEW")
 	{
 		im.DragFloat("CAM_X", &_ctx.cam.position.x, 0.125)

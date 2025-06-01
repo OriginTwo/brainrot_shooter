@@ -24,9 +24,6 @@ _ctx: struct {
 	cam: GFX_Camera,
 
 	disable_bloom: bool,
-	bloom_filter_radius: f32,
-	tonemap_exposure: f32,
-	tonemap_gamma: f32,
 }
 
 scn_game_init :: proc() {
@@ -66,10 +63,6 @@ scn_game_init :: proc() {
 
 	_ctx.cam.position.y = 1.0
 	_ctx.cam.fovy = math.PI/2.0
-
-	_ctx.bloom_filter_radius = 0.01
-	_ctx.tonemap_exposure = 1.2
-	_ctx.tonemap_gamma = 1.0
 }
 
 scn_game_uninit :: proc() {
@@ -237,11 +230,9 @@ scn_game_draw :: proc(alpha: f32) {
 
 	GFX_end_3d_renderer(&_ctx.ren3d)
 
-	GFX_do_post_fx_bloom(&_ctx.ren_fx, _ctx.ren3d.bright_color_texture, _ctx.bloom_filter_radius)
-	GFX_do_post_fx_tonemap(&_ctx.ren_fx, _ctx.ren_fx.bloom_mip_chain[0].texture, _ctx.tonemap_exposure, _ctx.tonemap_gamma)
-	GFX_do_post_fx_additive(&_ctx.ren_fx, _ctx.ren3d.color_texture, _ctx.ren_fx.tonemap_texture, _ctx.ren_fx.bloom_sampler, _ctx.ren_fx.bloom_sampler)
-
 	GFX_begin_2d_renderer(&_ctx.ren2d)
+
+	GFX_draw_post_fx(&_ctx.ren_fx, &_ctx.ren2d, &_ctx.ren3d)
 
 	win_size: [2]i32
 	sdl.GetWindowSize(WND_get_handle(), &win_size.x, &win_size.y)
@@ -293,9 +284,6 @@ scn_game_draw :: proc(alpha: f32) {
 		im.SliderFloat("yaw", &_ctx.cam.yaw, 0.0, 360.0)
 		im.SliderFloat("roll", &_ctx.cam.roll, -30.0, 30.0)
 		im.Checkbox("disable bloom", &_ctx.disable_bloom)
-		im.SliderFloat("bloom_filter_radius", &_ctx.bloom_filter_radius, 0.0001, 0.1)
-		im.SliderFloat("tonemap_exposure", &_ctx.tonemap_exposure, 0.1, 10.0)
-		im.SliderFloat("tonemap_gamma", &_ctx.tonemap_gamma, 0.1, 5.0)
 	}
 	im.End()
 

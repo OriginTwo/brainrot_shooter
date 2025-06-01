@@ -1091,6 +1091,7 @@ GFX_create_3d_renderer :: proc(
 
 GFX_destroy_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 	sg.destroy_buffer(ren.vertex_pos_buffer)
+	sg.destroy_buffer(ren.vertex_normal_buffer)
 	sg.destroy_buffer(ren.vertex_uv_buffer)
 	sg.destroy_buffer(ren.vertex_color_buffer)
 	sg.destroy_buffer(ren.index_buffer)
@@ -1633,13 +1634,15 @@ GFX__new_3d_batch_if_needed :: proc(
 ///////////////////////////////////////////////////////////
 // POST-PROCESSING EFFECT RENDERER
 ///////////////////////////////////////////////////////////
-GFX_BLOOM_MIP_CHAIN_LENGTH :: 7
+GFX_BLOOM_MIP_CHAIN_LENGTH :: 6
 
 GFX_Bloom_Mip :: struct {
 	width: int,
 	height: int,
-	texture: sg.Image,
-	attachments: sg.Attachments,
+	downsampled_texture: sg.Image,
+	downsampled_attachments: sg.Attachments,
+	upsampled_texture: sg.Image,
+	upsampled_attachments: sg.Attachments,
 }
 
 GFX_Post_FX_Renderer :: struct {
@@ -1769,23 +1772,38 @@ GFX_create_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer, width, height: i
 		mip_width := width
 		mip_height := height
 
-		for &mip in ren.bloom_mip_chain {
+		for &mip, i in ren.bloom_mip_chain {
 			mip_width /= 2
 			mip_height /= 2
 
 			mip.width = mip_width
 			mip.height = mip_height
-			mip.texture = sg.make_image({
+
+			mip.downsampled_texture = sg.make_image({
 				render_target = true,
 				width = i32(mip_width),
 				height = i32(mip_height),
 				pixel_format = .RG11B10F,
 			})
-			mip.attachments = sg.make_attachments({
+			mip.downsampled_attachments = sg.make_attachments({
 				colors = {0 = {
-					image = mip.texture,
+					image = mip.downsampled_texture,
 				}},
 			})
+
+			if i != len(ren.bloom_mip_chain) {
+				mip.upsampled_texture = sg.make_image({
+					render_target = true,
+					width = i32(mip_width),
+					height = i32(mip_height),
+					pixel_format = .RG11B10F,
+				})
+				mip.upsampled_attachments = sg.make_attachments({
+					colors = {0 = {
+						image = mip.upsampled_texture,
+					}},
+				})
+			}
 		}
 	}
 
@@ -1837,8 +1855,8 @@ GFX_create_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer, width, height: i
 	// tonemap
 	{
 		ren.tonemap_sampler = sg.make_sampler({
-			min_filter = .NEAREST,
-			mag_filter = .NEAREST,
+			min_filter = .LINEAR,
+			mag_filter = .LINEAR,
 			wrap_u = .CLAMP_TO_EDGE,
 			wrap_v = .CLAMP_TO_EDGE,
 		})
@@ -1900,8 +1918,10 @@ GFX_destroy_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer) {
 	sg.destroy_shader(ren.bloom_upsample_shader)
 	sg.destroy_pipeline(ren.bloom_upsample_pipeline)
 	for &mip in ren.bloom_mip_chain {
-		sg.destroy_image(mip.texture)
-		sg.destroy_attachments(mip.attachments)
+		sg.destroy_image(mip.downsampled_texture)
+		sg.destroy_attachments(mip.downsampled_attachments)
+		sg.destroy_image(mip.upsampled_texture)
+		sg.destroy_attachments(mip.upsampled_attachments)
 	}
 	sg.destroy_image(ren.additive_texture)
 	sg.destroy_attachments(ren.additive_attachments)
@@ -1910,7 +1930,19 @@ GFX_destroy_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer) {
 
 	sg.destroy_sampler(ren.tonemap_sampler)
 	sg.destroy_shader(ren.tonemap_shader)
+	sg.destroy_image(ren.tonemap_texture)
+	sg.destroy_attachments(ren.tonemap_attachments)
 	sg.destroy_pipeline(ren.tonemap_pipeline)
+}
+
+GFX_draw_post_fx :: proc(
+	ren_fx: ^GFX_Post_FX_Renderer,
+	ren2d: ^GFX_2D_Renderer,
+	ren3d: ^GFX_3D_Renderer,
+) {
+	GFX_do_post_fx_bloom(ren_fx, ren3d.bright_color_texture, 0.001)
+	GFX_do_post_fx_tonemap(ren_fx, ren_fx.bloom_mip_chain[0].upsampled_texture)
+	GFX_do_post_fx_additive(ren_fx, ren3d.color_texture, ren_fx.tonemap_texture, ren_fx.bloom_sampler, ren_fx.bloom_sampler)
 }
 
 GFX_do_post_fx_bloom :: proc(
@@ -1931,7 +1963,7 @@ GFX_do_post_fx_bloom :: proc(
 				load_action = .CLEAR,
 				clear_value = {0.0, 0.0, 0.0, 1.0},
 			}}},
-			attachments = mip.attachments,
+			attachments = mip.downsampled_attachments,
 		})
 		sg.apply_pipeline(ren.bloom_downsample_pipeline)
 		sg.apply_bindings({
@@ -1948,7 +1980,7 @@ GFX_do_post_fx_bloom :: proc(
 		sg.draw(0, 6, 1)
 		sg.end_pass()
 
-		mip_texture = mip.texture
+		mip_texture = mip.downsampled_texture
 		mip_resolution = {f32(mip.width), f32(mip.height)}
 	}
 
@@ -1962,14 +1994,17 @@ GFX_do_post_fx_bloom :: proc(
 				load_action = .CLEAR,
 				clear_value = {0.0, 0.0, 0.0, 1.0},
 			}}},
-			attachments = next_mip.attachments,
+			attachments = next_mip.upsampled_attachments,
 		})
 		sg.apply_pipeline(ren.bloom_upsample_pipeline)
 		sg.apply_bindings({
 			vertex_buffers = {0 = ren.vertex_buffer},
 			index_buffer = ren.index_buffer,
-			images = {shader.IMG_bloom_U_src_texture = mip.texture},
-			samplers = {shader.SMP_bloom_U_src_sampler = ren.bloom_sampler},
+			images = {
+				shader.IMG_bloom_U_downsampled_texture = mip.downsampled_texture,
+				shader.IMG_bloom_U_upsampled_texture = mip.upsampled_texture,
+			},
+			samplers = {shader.SMP_bloom_U_sampler = ren.bloom_sampler},
 		})
 		uniform := shader.Bloom_Upsample_Fragment_Param{
 			filter_radius = filter_radius,
@@ -2013,12 +2048,7 @@ GFX_do_post_fx_additive :: proc(
 
 }
 
-GFX_do_post_fx_tonemap :: proc(
-	ren: ^GFX_Post_FX_Renderer,
-	src_texture: sg.Image,
-	exposure: f32,
-	gamma: f32,
-) {
+GFX_do_post_fx_tonemap :: proc(ren: ^GFX_Post_FX_Renderer, src_texture: sg.Image) {
 	sg.begin_pass({
 		action = {colors = {0 = {
 			load_action = .CLEAR,
@@ -2033,11 +2063,6 @@ GFX_do_post_fx_tonemap :: proc(
 		images = {shader.IMG_tonemap_U_texture = src_texture},
 		samplers = {shader.SMP_tonemap_U_sampler = ren.tonemap_sampler},
 	})
-	uniform := shader.Tonemap_Fragment_Param{
-		exposure = exposure,
-		gamma = gamma,
-	}
-	sg.apply_uniforms(shader.UB_tonemap_Fragment_Param, {&uniform, size_of(uniform)})
 	sg.draw(0, 6, 1)
 	sg.end_pass()
 }
