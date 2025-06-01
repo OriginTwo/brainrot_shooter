@@ -28,8 +28,8 @@ _ctx: struct {
 
 scn_game_init :: proc() {
 	GFX_create_2d_renderer(&_ctx.ren2d)
-	GFX_create_3d_renderer(&_ctx.ren3d, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
-	GFX_create_post_fx_renderer(&_ctx.ren_fx, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+	GFX_create_3d_renderer(&_ctx.ren3d, WINDOW_WIDTH, WINDOW_HEIGHT)
+	GFX_create_post_fx_renderer(&_ctx.ren_fx, WINDOW_WIDTH, WINDOW_HEIGHT)
 
 	{
 		img: GFX_Image
@@ -232,8 +232,6 @@ scn_game_draw :: proc(alpha: f32) {
 
 	GFX_begin_2d_renderer(&_ctx.ren2d)
 
-	GFX_draw_post_fx(&_ctx.ren_fx, &_ctx.ren2d, &_ctx.ren3d)
-
 	win_size: [2]i32
 	sdl.GetWindowSize(WND_get_handle(), &win_size.x, &win_size.y)
 
@@ -249,16 +247,7 @@ scn_game_draw :: proc(alpha: f32) {
 			M_COLOR_WHITE,
 		)
 	} else {
-		w := f32(sg.query_image_width(_ctx.ren_fx.additive_texture))
-		h := f32(sg.query_image_height(_ctx.ren_fx.additive_texture))
-		GFX_draw_2d_texture(
-			&_ctx.ren2d,
-			_ctx.ren_fx.additive_texture,
-			GFX_get_default_2d_sampler(_ctx.ren2d),
-			{0.0, 0.0, w, h},
-			{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
-			M_COLOR_WHITE,
-		)
+		GFX_draw_post_fx(&_ctx.ren_fx, &_ctx.ren2d, &_ctx.ren3d)
 	}
 
 	GFX_set_2d_layer(&_ctx.ren2d, 10)

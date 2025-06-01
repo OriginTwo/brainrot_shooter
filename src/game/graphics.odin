@@ -1672,10 +1672,10 @@ GFX_create_post_fx_renderer :: proc(ren: ^GFX_Post_FX_Renderer, width, height: i
 	// buffers
 	{
 		vertices := []struct{pos, uv: M_Vec2f32}{
-			{{-1.0,  1.0}, {0.0, 0.0}}, // 0
-			{{ 1.0,  1.0}, {1.0, 0.0}}, // 1
-			{{ 1.0, -1.0}, {1.0, 1.0}}, // 2
-			{{-1.0, -1.0}, {0.0, 1.0}}, // 3
+			{{-1.0,  1.0}, {0.0, 1.0}}, // 0
+			{{ 1.0,  1.0}, {1.0, 1.0}}, // 1
+			{{ 1.0, -1.0}, {1.0, 0.0}}, // 2
+			{{-1.0, -1.0}, {0.0, 0.0}}, // 3
 		}
 		vertices_byte_size := uint(len(vertices)*size_of(vertices[0]))
 		ren.vertex_buffer = sg.make_buffer({
@@ -1941,8 +1941,22 @@ GFX_draw_post_fx :: proc(
 	ren3d: ^GFX_3D_Renderer,
 ) {
 	GFX_do_post_fx_bloom(ren_fx, ren3d.bright_color_texture, 0.001)
-	GFX_do_post_fx_tonemap(ren_fx, ren_fx.bloom_mip_chain[0].upsampled_texture)
-	GFX_do_post_fx_additive(ren_fx, ren3d.color_texture, ren_fx.tonemap_texture, ren_fx.bloom_sampler, ren_fx.bloom_sampler)
+	GFX_do_post_fx_additive(ren_fx, ren3d.color_texture, ren_fx.bloom_mip_chain[0].upsampled_texture, ren_fx.bloom_sampler, ren_fx.bloom_sampler)
+	GFX_do_post_fx_tonemap(ren_fx, ren_fx.additive_texture)
+
+	win_size: [2]i32
+	sdl.GetWindowSize(GFX__ctx.window, &win_size.x, &win_size.y)
+
+	w := f32(sg.query_image_width(ren_fx.tonemap_texture))
+	h := f32(sg.query_image_height(ren_fx.tonemap_texture))
+	GFX_draw_2d_texture(
+		ren2d,
+		ren_fx.tonemap_texture,
+		ren_fx.bloom_sampler,
+		{0.0, h, w, -h},
+		{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
+		M_COLOR_WHITE,
+	)
 }
 
 GFX_do_post_fx_bloom :: proc(
@@ -1973,7 +1987,7 @@ GFX_do_post_fx_bloom :: proc(
 			samplers = {shader.SMP_bloom_U_src_sampler = ren.bloom_sampler},
 		})
 		uniform := shader.Bloom_Downsample_Fragment_Param{
-			src_resolution = mip_resolution,
+			src_resolution = mip_resolution/2.0,
 		}
 		sg.apply_uniforms(shader.UB_bloom_Downsample_Fragment_Param, {&uniform, size_of(uniform)})
 		sg.apply_viewport(0, 0, i32(mip.width), i32(mip.height), false)

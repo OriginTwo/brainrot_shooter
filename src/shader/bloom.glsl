@@ -73,8 +73,8 @@ in vec2 F_uv;
 
 out vec4 O_color;
 
-layout(binding=0) uniform texture2D U_downsampled_texture;
-layout(binding=1) uniform texture2D U_upsampled_texture;
+layout(binding=0) uniform texture2D U_downsampled_texture;  // downsampled of current mip
+layout(binding=1) uniform texture2D U_upsampled_texture;    // upsampled of previous mip
 layout(binding=1) uniform sampler U_sampler;
 layout(binding=0) uniform Upsample_Fragment_Param {
 	float filter_radius;
@@ -88,17 +88,17 @@ void main() {
 	// a - b - c
 	// d - e - f
 	// g - h - i
-	vec3 a = texture(sampler2D(U_downsampled_texture, U_sampler), vec2(F_uv.x - x, F_uv.y + y)).rgb;
-	vec3 b = texture(sampler2D(U_downsampled_texture, U_sampler), vec2(F_uv.x,     F_uv.y + y)).rgb;
-	vec3 c = texture(sampler2D(U_downsampled_texture, U_sampler), vec2(F_uv.x + x, F_uv.y + y)).rgb;
+	vec3 a = texture(sampler2D(U_upsampled_texture, U_sampler), vec2(F_uv.x - x, F_uv.y + y)).rgb;
+	vec3 b = texture(sampler2D(U_upsampled_texture, U_sampler), vec2(F_uv.x,     F_uv.y + y)).rgb;
+	vec3 c = texture(sampler2D(U_upsampled_texture, U_sampler), vec2(F_uv.x + x, F_uv.y + y)).rgb;
 
-	vec3 d = texture(sampler2D(U_downsampled_texture, U_sampler), vec2(F_uv.x - x, F_uv.y)).rgb;
-	vec3 e = texture(sampler2D(U_downsampled_texture, U_sampler), vec2(F_uv.x,     F_uv.y)).rgb;
-	vec3 f = texture(sampler2D(U_downsampled_texture, U_sampler), vec2(F_uv.x + x, F_uv.y)).rgb;
+	vec3 d = texture(sampler2D(U_upsampled_texture, U_sampler), vec2(F_uv.x - x, F_uv.y)).rgb;
+	vec3 e = texture(sampler2D(U_upsampled_texture, U_sampler), vec2(F_uv.x,     F_uv.y)).rgb;
+	vec3 f = texture(sampler2D(U_upsampled_texture, U_sampler), vec2(F_uv.x + x, F_uv.y)).rgb;
 
-	vec3 g = texture(sampler2D(U_downsampled_texture, U_sampler), vec2(F_uv.x - x, F_uv.y - y)).rgb;
-	vec3 h = texture(sampler2D(U_downsampled_texture, U_sampler), vec2(F_uv.x,     F_uv.y - y)).rgb;
-	vec3 i = texture(sampler2D(U_downsampled_texture, U_sampler), vec2(F_uv.x + x, F_uv.y - y)).rgb;
+	vec3 g = texture(sampler2D(U_upsampled_texture, U_sampler), vec2(F_uv.x - x, F_uv.y - y)).rgb;
+	vec3 h = texture(sampler2D(U_upsampled_texture, U_sampler), vec2(F_uv.x,     F_uv.y - y)).rgb;
+	vec3 i = texture(sampler2D(U_upsampled_texture, U_sampler), vec2(F_uv.x + x, F_uv.y - y)).rgb;
 
 	// apply weighted distribution
 	vec3 color = e*4.0;
@@ -106,8 +106,8 @@ void main() {
 	color += (a + c + g + i);
 	color *= 1.0/16.0;
 
-	vec3 upsampled_color = texture(sampler2D(U_upsampled_texture, U_sampler), F_uv).rgb;
-	O_color = vec4(upsampled_color + color, 1.0);
+	vec3 curr_mip_color = texture(sampler2D(U_downsampled_texture, U_sampler), F_uv).rgb;
+	O_color = vec4(curr_mip_color + color, 1.0);
 }
 @end
 

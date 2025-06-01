@@ -35,7 +35,10 @@ vec3 aces(vec3 x) {
 
 void main() {
 	vec4 color = texture(sampler2D(U_texture, U_sampler), F_uv);
-	O_color = vec4(aces(color.rgb), color.a);
+	vec3 tonemapped_color = aces(color.rgb);
+	// vec3 final_color = pow(tonemapped_color, vec3(1.0/2.2)); // gamma correction
+	vec3 final_color = tonemapped_color;
+	O_color = vec4(final_color, color.a);
 }
 @end
 

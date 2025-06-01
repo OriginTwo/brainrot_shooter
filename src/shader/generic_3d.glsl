@@ -92,7 +92,7 @@ void main() {
 	}
 
 	// ambient light
-	total_diffuse = max(total_diffuse, 0.16);
+	total_diffuse = max(total_diffuse, 0.12);
 
 	O_color = vec4(total_diffuse, 1.0)*texture(sampler2D(U_texture, U_sampler), F_uv)*F_color;
 	O_color = mix(vec4(U_param.fog_color, 1.0), O_color, F_visibility);
