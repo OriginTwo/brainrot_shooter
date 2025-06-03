@@ -47,6 +47,7 @@
 		X select
 			X move
 			X deselect
+			X delete
 		X properties (floor height, ceiling height, link, etc.)
 		X draw 2d view
 		- draw 3d view
