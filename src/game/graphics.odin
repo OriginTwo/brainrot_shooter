@@ -1128,6 +1128,10 @@ GFX_begin_3d_renderer :: proc(ren: ^GFX_3D_Renderer, cam: GFX_Camera) {
 }
 
 GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
+	if ren.num_vertices == 0 || ren.num_indices == 0 {
+		return
+	}
+
 	ren.batches[ren.num_batches].num_indices = ren.num_indices - ren.batches[ren.num_batches].first_index
 	ren.num_batches += 1
 
