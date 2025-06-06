@@ -594,6 +594,55 @@ GFX_set_2d_layer :: proc(ren: ^GFX_2D_Renderer, layer: int) {
 	ren.layer = layer
 }
 
+GFX_draw_2d_line :: proc(
+	ren: ^GFX_2D_Renderer,
+	p1: M_Vec2f32,
+	p2: M_Vec2f32,
+	color: M_Color,
+	thick: f32 = 1.0,
+) {
+	GFX__new_2d_batch_if_needed(ren, ren.white_texture, ren.default_sampler)
+
+	delta := p2 - p1
+	length := linalg.length(delta)
+
+	if length > 0.0 && thick > 0.0 {
+		scale := thick/(2.0*length)
+		radius := M_Vec2f32{-delta.y, delta.x}*scale
+		col := M_frgba_from_urgba(color)
+
+		start_index := GFX__2D_Index(ren.num_vertices)
+
+		ren.vertex_positions[ren.num_vertices] = p1 - radius
+		ren.vertex_uvs[ren.num_vertices] = {0.0, 0.0}
+		ren.vertex_colors[ren.num_vertices] = col
+		ren.num_vertices += 1
+
+		ren.vertex_positions[ren.num_vertices] = p1 + radius
+		ren.vertex_uvs[ren.num_vertices] = {1.0, 0.0}
+		ren.vertex_colors[ren.num_vertices] = col
+		ren.num_vertices += 1
+
+		ren.vertex_positions[ren.num_vertices] = p2 + radius
+		ren.vertex_uvs[ren.num_vertices] = {1.0, 1.0}
+		ren.vertex_colors[ren.num_vertices] = col
+		ren.num_vertices += 1
+
+		ren.vertex_positions[ren.num_vertices] = p2 - radius
+		ren.vertex_uvs[ren.num_vertices] = {0.0, 1.0}
+		ren.vertex_colors[ren.num_vertices] = col
+		ren.num_vertices += 1
+
+		ren.indices[ren.num_indices + 0] = start_index + 0
+		ren.indices[ren.num_indices + 1] = start_index + 1
+		ren.indices[ren.num_indices + 2] = start_index + 2
+		ren.indices[ren.num_indices + 3] = start_index + 0
+		ren.indices[ren.num_indices + 4] = start_index + 2
+		ren.indices[ren.num_indices + 5] = start_index + 3
+		ren.num_indices += 6
+	}
+}
+
 GFX_draw_2d_triangle :: proc(
 	ren: ^GFX_2D_Renderer,
 	p1: M_Vec2f32, c1: M_Color,

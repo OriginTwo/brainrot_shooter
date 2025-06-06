@@ -13,79 +13,241 @@ import sdl "vendor:sdl3"
 import im "lib:imgui"
 import sg "lib:sokol/gfx"
 
-LVL_UNIT_PER_GRID :: 0.5
-LVL_MAX_SECTOR_SIZE :: 65535
+/*
+TODO: when switching to 3d view, construct the level in "runtime" format
 
-LVL_Sector_Wall_Direction :: enum {
-	North,
-	East,
-	South,
-	West,
-}
+	- walls will be construct like 2d light & shadow where there will be and
+		intermediate cells that will have the flags of which wall direction they have
 
-LVL_Sector_Wall :: struct {
-	position: M_Vec3f32,
-	size: M_Vec2f32,
-	facing: LVL_Sector_Wall_Direction,
-}
+NOTE: the cell that is inside a sector and has a neighboring cell inside another sector will not have
+	collision and some might have 2 walls as well (top & bottom from different floor & ceiling y)
+	- another idea: every wall has collision, but if "wall_height <= 0.25" then you snap up the wall
 
-LVL_Sector_Handle :: struct {
+RUNTIME FORMAT:
+	- sectors
+		- position   : Vec2f32
+		- size       : Vec2f32
+		- floor_y    : f32
+		- ceiling_y  : f32
+	- walls
+		- p1         : Vec2f32
+		- p2         : Vec2f32
+		- height     : f32
+		- normal     : Vec3f32
+	- chunks (for collision & rendering optimization)
+		- sector indices  : int
+		- wall indices    : int
+*/
+
+@(private="file")
+_Sector_Handle :: struct {
 	index: int,
 	generation: u32,
 }
+@(private="file") _INVALID_SECTOR_HANDLE :: _Sector_Handle{-1, 0}
 
-LVL_INVALID_SECTOR_HANDLE :: LVL_Sector_Handle{-1, 0}
-
-LVL_Sector :: struct {
-	handle: LVL_Sector_Handle,
+@(private="file")
+_Sector :: struct {
+	handle: _Sector_Handle,
 	is_deleted: bool,
 	position: [2]int, // x, z
 	size: [2]int,
 	floor_y: f32,
 	ceiling_y: f32,
-	walls: [dynamic]LVL_Sector_Wall,
+	linked_sectors: [dynamic]_Sector_Handle,
 }
 
-LVL_Level :: struct {
-	sectors: [dynamic]LVL_Sector,
-	free_sector_slots: [dynamic]LVL_Sector_Handle,
+@(private="file")
+_Level :: struct {
+	sectors: [dynamic]_Sector,
+	free_sector_slots: [dynamic]_Sector_Handle,
 }
 
-lvl_append_sector :: proc(lvl: ^LVL_Level, position, size: [2]int, floor_y, ceiling_y: f32) {
-	sector := LVL_Sector{
+@(private="file")
+_append_sector :: proc(position, size: [2]int, floor_y, ceiling_y: f32) {
+	sector := _Sector{
 		position = position,
 		size = size,
 		floor_y = floor_y,
 		ceiling_y = ceiling_y,
 	}
 
-	if len(lvl.free_sector_slots) > 0 {
-		handle := pop(&lvl.free_sector_slots)
+	if len(_ctx.level.free_sector_slots) > 0 {
+		handle := pop(&_ctx.level.free_sector_slots)
 		sector.handle = {
 			index = handle.index,
 			generation = handle.generation + 1,
 		}
-		lvl.sectors[handle.index] = sector
+		_ctx.level.sectors[handle.index] = sector
 	} else {
 		sector.handle = {
-			index = len(lvl.sectors),
+			index = len(_ctx.level.sectors),
 			generation = 0,
 		}
-		append(&lvl.sectors, sector)
+		append(&_ctx.level.sectors, sector)
 	}
 }
 
-lvl_delete_sector :: proc(lvl: ^LVL_Level, handle: LVL_Sector_Handle) {
-	sector := &lvl.sectors[handle.index]
+@(private="file")
+_delete_sector :: proc(handle: _Sector_Handle) {
+	sector := &_ctx.level.sectors[handle.index]
 	if sector.handle.generation == handle.generation {
 		sector.is_deleted = true
-		append(&lvl.free_sector_slots, handle)
+
+		for linked_handle in sector.linked_sectors {
+			if linked_sector := _get_sector_ptr(handle); linked_sector != nil {
+				for h, i in linked_sector.linked_sectors {
+					if h == linked_handle {
+						unordered_remove(&linked_sector.linked_sectors, i)
+					}
+				}
+			}
+		}
+
+		delete(sector.linked_sectors)
+		append(&_ctx.level.free_sector_slots, handle)
 	}
+}
+
+@(private="file")
+_get_sector_ptr :: proc(handle: _Sector_Handle) -> (result: ^_Sector) {
+	for &sector in _ctx.level.sectors {
+		if sector.handle == handle {
+			result = &sector
+			break
+		}
+	}
+	return
+}
+
+@(private="file")
+_construct_actual_level :: proc() {
+	min_pos := +_INVALID_GRID_COORD
+	max_pos := -_INVALID_GRID_COORD
+
+	for sector in _ctx.level.sectors {
+		min_pos.x = min(sector.position.x, min_pos.x)
+		min_pos.y = min(sector.position.y, min_pos.y)
+		max_pos.x = max(sector.position.x, max_pos.x)
+		max_pos.y = max(sector.position.y, max_pos.y)
+	}
+
+	_Cell :: struct {
+		exist: bool,
+		n_wall_index: int,
+		e_wall_index: int,
+		s_wall_index: int,
+		w_wall_index: int,
+	}
+	_INVALID_CELL :: _Cell{false, -1, -1, -1, -1}
+
+	cells := make([]_Cell, (max_pos.x - min_pos.x)*(max_pos.y - min_pos.y))
+	defer delete(cells)
+
+	for &cell in cells {
+		cell.n_wall_index = -1
+		cell.e_wall_index = -1
+		cell.s_wall_index = -1
+		cell.w_wall_index = -1
+	}
+
+	width := max_pos.x - min_pos.x
+	height := max_pos.y - min_pos.y
+
+	for y in 0..<height {
+		for x in 0..<width {
+			curr_cell := &cells[x + y*width]
+			if !curr_cell.exist {
+				continue
+			}
+
+			n := cells[x + (y - 1)*width] if y > 0          else _INVALID_CELL
+			s := cells[x + (y + 1)*width] if y < height - 1 else _INVALID_CELL
+			w := cells[(x - 1) + y*width] if x > 0          else _INVALID_CELL
+			e := cells[(x + 1) + y*width] if x < width - 1  else _INVALID_CELL
+		}
+	}
+
+	/*
+	// north edge
+	if !n.exist {
+		if w.exist && w.n_edge_index != -1 {
+			// extend edge
+			curr_cell.n_edge_index = w.n_edge_index
+			edges[curr_cell.n_edge_index].p2.x = f32(x + 1)*TILE_SIZE
+		} else {
+			// create new edge
+			curr_cell.n_edge_index = len(edges)
+			append(&edges, Edge{
+				{f32(  x  )*TILE_SIZE, f32(y)*TILE_SIZE},
+				{f32(x + 1)*TILE_SIZE, f32(y)*TILE_SIZE},
+				{0.0, -1.0},
+			})
+		}
+	}
+
+	// NOTE: south edge swap p1 and p2 so that when drawing, the
+	// order of the points will be counterclockwise
+	// south edge
+	if !s.exist {
+		if w.exist && w.s_edge_index != -1 {
+			// extend edge
+			curr_cell.s_edge_index = w.s_edge_index
+			edges[curr_cell.s_edge_index].p1.x = f32(x + 1)*TILE_SIZE
+		} else {
+			// create new edge
+			curr_cell.s_edge_index = len(edges)
+			append(&edges, Edge{
+				{f32(x + 1)*TILE_SIZE, f32(y + 1)*TILE_SIZE},
+				{f32(  x  )*TILE_SIZE, f32(y + 1)*TILE_SIZE},
+				{0.0, 1.0},
+			})
+		}
+	}
+
+	// NOTE: west edge swap p1 and p2 so that when drawing, the
+	// order of the points will be counterclockwise
+	// west edge
+	if !w.exist {
+		if n.exist && n.w_edge_index != -1 {
+			// extend edge
+			curr_cell.w_edge_index = n.w_edge_index
+			edges[curr_cell.w_edge_index].p1.y = f32(y + 1)*TILE_SIZE
+		} else {
+			// create new edge
+			curr_cell.w_edge_index = len(edges)
+			append(&edges, Edge{
+				{f32(x)*TILE_SIZE, f32(y + 1)*TILE_SIZE},
+				{f32(x)*TILE_SIZE, f32(  y  )*TILE_SIZE},
+				{-1.0, 0.0},
+			})
+		}
+	}
+
+	// east edge
+	if !e.exist {
+		if n.exist && n.e_edge_index != -1 {
+			// extend edge
+			curr_cell.e_edge_index = n.e_edge_index
+			edges[curr_cell.e_edge_index].p2.y = f32(y + 1)*TILE_SIZE
+		} else {
+			// create new edge
+			curr_cell.e_edge_index = len(edges)
+			append(&edges, Edge{
+				{f32(x + 1)*TILE_SIZE, f32(  y  )*TILE_SIZE},
+				{f32(x + 1)*TILE_SIZE, f32(y + 1)*TILE_SIZE},
+				{1.0, 0.0},
+			})
+		}
+	}
+	*/
 }
 
 
 
-@(private="file") _INVALID_GRID :: [2]int{65535, 65535}
+@(private="file") _UNIT_PER_GRID :: 0.5
+@(private="file") _MAX_SECTOR_GRID_COORD :: 65535
+@(private="file") _INVALID_GRID_COORD :: [2]int{_MAX_SECTOR_GRID_COORD, _MAX_SECTOR_GRID_COORD}
 @(private="file") _2D_GRID_SIZE :: 24
 @(private="file") _2D_GRID_POINT_SIZE :: 4
 @(private="file") _2D_CAM_SPEED :: 400.0
@@ -112,16 +274,21 @@ _ctx: struct {
 	ren_fx: GFX_Post_FX_Renderer,
 	cam: GFX_Camera,
 
-	level: LVL_Level,
+	level: _Level,
+
+	world_mouse_pos: [2]f32,
+	grid_mouse_pos: [2]int,
 
 	mouse_pressed_grid: [2]int,
 
-	hovering_sector_handle: LVL_Sector_Handle,
-	selected_sector_handle: LVL_Sector_Handle,
+	hovering_sector_handle: _Sector_Handle,
+	selected_sector_handle: _Sector_Handle,
 	selected_sector_window_open: bool,
 	is_placing_sector: bool,
 	placing_sector_p1: [2]int,
 	placing_sector_p2: [2]int,
+	linking_sector1_handle: _Sector_Handle,
+	linking_sector2_handle: _Sector_Handle,
 
 	is_3d_view: bool,
 	was_3d_view: bool,
@@ -136,10 +303,12 @@ scn_editor_init :: proc() {
 
 	_ctx.cam.fovy = math.PI/2.0
 
-	_ctx.mouse_pressed_grid = _INVALID_GRID
+	_ctx.mouse_pressed_grid = _INVALID_GRID_COORD
 
-	_ctx.hovering_sector_handle = LVL_INVALID_SECTOR_HANDLE
-	_ctx.selected_sector_handle = LVL_INVALID_SECTOR_HANDLE
+	_ctx.hovering_sector_handle = _INVALID_SECTOR_HANDLE
+	_ctx.selected_sector_handle = _INVALID_SECTOR_HANDLE
+	_ctx.linking_sector1_handle = _INVALID_SECTOR_HANDLE
+	_ctx.linking_sector2_handle = _INVALID_SECTOR_HANDLE
 
 	{
 		win_size: [2]i32
@@ -180,7 +349,7 @@ scn_editor_draw :: proc(alpha: f32) {
 
 	if _ctx.is_3d_view {
 		if !_ctx.was_3d_view {
-			// TODO: construct sectors' walls
+			// TODO: construct runtime level
 		}
 
 		_draw_3d_view(alpha)
@@ -218,28 +387,27 @@ _tick_2d_view :: proc(input: INP_State, delta: f32) {
 		_ctx.offset_2d += vel*delta
 	}
 
-	world_mouse_pos := INP_get_mouse_pos(input) + _ctx.offset_2d
-	grid_mouse_pos: [2]int
+	_ctx.world_mouse_pos = INP_get_mouse_pos(input) + _ctx.offset_2d
 	{
 		mp := [2]int{
-			int(world_mouse_pos.x if world_mouse_pos.x > 0 else world_mouse_pos.x - _2D_GRID_SIZE),
-			int(world_mouse_pos.y if world_mouse_pos.y > 0 else world_mouse_pos.y - _2D_GRID_SIZE),
+			int(_ctx.world_mouse_pos.x if _ctx.world_mouse_pos.x > 0 else _ctx.world_mouse_pos.x - _2D_GRID_SIZE),
+			int(_ctx.world_mouse_pos.y if _ctx.world_mouse_pos.y > 0 else _ctx.world_mouse_pos.y - _2D_GRID_SIZE),
 		}
-		grid_mouse_pos = mp/_2D_GRID_SIZE
+		_ctx.grid_mouse_pos = mp/_2D_GRID_SIZE
 	}
 
 	if !INP_is_mouse_down(input, .Left) && INP_get_mouse_delta(input) != {} {
 		// TODO: chunk optimization
-		hovering_sector_handle := LVL_INVALID_SECTOR_HANDLE
-		hovering_sector_area := 999999
+		hovering_sector_handle := _INVALID_SECTOR_HANDLE
+		hovering_sector_area := _MAX_SECTOR_GRID_COORD*_MAX_SECTOR_GRID_COORD
 
 		for sector in _ctx.level.sectors {
 			if sector.is_deleted {
 				continue
 			}
 
-			if (sector.position.x <= grid_mouse_pos.x && grid_mouse_pos.x < sector.position.x + sector.size.x) &&
-				(sector.position.y <= grid_mouse_pos.y && grid_mouse_pos.y < sector.position.y + sector.size.y)
+			if (sector.position.x <= _ctx.grid_mouse_pos.x && _ctx.grid_mouse_pos.x < sector.position.x + sector.size.x) &&
+				(sector.position.y <= _ctx.grid_mouse_pos.y && _ctx.grid_mouse_pos.y < sector.position.y + sector.size.y)
 			{
 				area := sector.size.x*sector.size.y
 				if area < hovering_sector_area {
@@ -253,20 +421,20 @@ _tick_2d_view :: proc(input: INP_State, delta: f32) {
 	}
 
 	if INP_is_mouse_pressed(input, .Left) {
-		_ctx.mouse_pressed_grid = grid_mouse_pos
+		_ctx.mouse_pressed_grid = _ctx.grid_mouse_pos
 	}
 
 	if INP_is_mouse_down(input, .Left) &&
 		!_ctx.is_placing_sector &&
-		grid_mouse_pos - _ctx.mouse_pressed_grid != {}
+		_ctx.grid_mouse_pos - _ctx.mouse_pressed_grid != {}
 	{
 		_ctx.is_placing_sector = true
 		_ctx.placing_sector_p1 = _ctx.mouse_pressed_grid
-		_ctx.placing_sector_p2 = grid_mouse_pos
+		_ctx.placing_sector_p2 = _ctx.grid_mouse_pos
 	}
 
 	if _ctx.is_placing_sector {
-		_ctx.placing_sector_p2 = grid_mouse_pos
+		_ctx.placing_sector_p2 = _ctx.grid_mouse_pos
 	}
 
 	if INP_is_mouse_released(input, .Left) {
@@ -281,8 +449,7 @@ _tick_2d_view :: proc(input: INP_State, delta: f32) {
 				max(_ctx.placing_sector_p1.y, _ctx.placing_sector_p2.y) + 1,
 			}
 
-			lvl_append_sector(
-				&_ctx.level,
+			_append_sector(
 				minimum,
 				maximum - minimum,
 				_DEFAULT_FLOOR_Y,
@@ -290,15 +457,36 @@ _tick_2d_view :: proc(input: INP_State, delta: f32) {
 			)
 
 			_ctx.is_placing_sector = false
-			_ctx.placing_sector_p1 = _INVALID_GRID
-			_ctx.placing_sector_p2 = _INVALID_GRID
+			_ctx.placing_sector_p1 = _INVALID_GRID_COORD
+			_ctx.placing_sector_p2 = _INVALID_GRID_COORD
 		} else {
 			// selecting sector
 			_ctx.selected_sector_handle = _ctx.hovering_sector_handle
-			_ctx.selected_sector_window_open = _ctx.hovering_sector_handle != LVL_INVALID_SECTOR_HANDLE
+			_ctx.selected_sector_window_open = _ctx.hovering_sector_handle != _INVALID_SECTOR_HANDLE
 		}
 
-		_ctx.mouse_pressed_grid = _INVALID_GRID
+		_ctx.mouse_pressed_grid = _INVALID_GRID_COORD
+	}
+
+	if INP_is_mouse_pressed(input, .Right) && _ctx.hovering_sector_handle != _INVALID_SECTOR_HANDLE {
+		_ctx.linking_sector1_handle = _ctx.hovering_sector_handle
+	}
+
+	if INP_is_mouse_released(input, .Right) && _ctx.hovering_sector_handle != _INVALID_SECTOR_HANDLE {
+		_ctx.linking_sector2_handle = _ctx.hovering_sector_handle
+
+		if _ctx.linking_sector2_handle != _ctx.linking_sector1_handle {
+			sector1 := _get_sector_ptr(_ctx.linking_sector1_handle)
+			sector2 := _get_sector_ptr(_ctx.linking_sector2_handle)
+
+			if sector1 != nil && sector2 != nil {
+				append(&sector1.linked_sectors, _ctx.linking_sector2_handle)
+				append(&sector2.linked_sectors, _ctx.linking_sector1_handle)
+			}
+		}
+
+		_ctx.linking_sector1_handle = _INVALID_SECTOR_HANDLE
+		_ctx.linking_sector2_handle = _INVALID_SECTOR_HANDLE
 	}
 }
 
@@ -362,8 +550,25 @@ _draw_2d_view :: proc(alpha: f32) {
 			}
 
 			GFX_draw_2d_rect(&_ctx.ren2d, rect, color)
+
+			GFX_set_2d_layer(&_ctx.ren2d, 1)
+			for linked_sector_handle in sector.linked_sectors {
+				if linked_sector := _get_sector_ptr(linked_sector_handle); linked_sector != nil {
+					p1 := M_Vec2f32{
+						f32(sector.position.x) + f32(sector.size.x)/2.0,
+						f32(sector.position.y) + f32(sector.size.y)/2.0,
+					}*_2D_GRID_SIZE - _ctx.offset_2d
+					p2 := M_Vec2f32{
+						f32(linked_sector.position.x) + f32(linked_sector.size.x)/2.0,
+						f32(linked_sector.position.y) + f32(linked_sector.size.y)/2.0,
+					}*_2D_GRID_SIZE - _ctx.offset_2d
+
+					GFX_draw_2d_line(&_ctx.ren2d, p1, p2, M_COLOR_MAGENTA, 2.0)
+				}
+			}
 		}
 
+		GFX_set_2d_layer(&_ctx.ren2d, 0)
 		GFX_draw_2d_rect_line(&_ctx.ren2d, rect, {255, 255, 255, 200}, 2.0)
 	}
 
@@ -390,6 +595,21 @@ _draw_2d_view :: proc(alpha: f32) {
 			{255, 200, 25, u8((math.sin(8.0*f32(TIME_now()))*0.35 + 0.65)*255.0)},
 			2.0,
 		)
+	}
+
+	// draw sector link preview
+	if _ctx.linking_sector1_handle != _INVALID_SECTOR_HANDLE {
+		if sector := _get_sector_ptr(_ctx.linking_sector1_handle); sector != nil {
+			p1 := M_Vec2f32{
+				f32(sector.position.x) + f32(sector.size.x)/2.0,
+				f32(sector.position.y) + f32(sector.size.y)/2.0,
+			}*_2D_GRID_SIZE - _ctx.offset_2d
+			p2 := _ctx.world_mouse_pos - _ctx.offset_2d
+
+			color := M_Color{255, 200, 25, u8((math.sin(8.0*f32(TIME_now()))*0.3 + 0.7)*255.0)}
+
+			GFX_draw_2d_line(&_ctx.ren2d, p1, p2, color, 2.0)
+		}
 	}
 
 	GFX_end_2d_renderer(&_ctx.ren2d)
@@ -424,20 +644,20 @@ _do_2d_view_ui :: proc() {
 			width := i32(selected_sector.size.x)
 			im.Text("WIDTH:"); im.SameLine()
 			im.SetNextItemWidth(50.0)
-			im.DragInt("###SELECTED_SECTOR_WIDTH", &width, v_min = 1, v_max = LVL_MAX_SECTOR_SIZE); im.SameLine(spacing = SPACING)
+			im.DragInt("###SELECTED_SECTOR_WIDTH", &width, v_min = 1, v_max = _MAX_SECTOR_GRID_COORD); im.SameLine(spacing = SPACING)
 			if im.Button("-###SELECTED_SECTOR_WIDTH_DECREMENT") && width > 1                       {width -= 1} im.SameLine(spacing = SPACING)
-			if im.Button("+###SELECTED_SECTOR_WIDTH_INCREMENT") && width < LVL_MAX_SECTOR_SIZE - 1 {width += 1}
+			if im.Button("+###SELECTED_SECTOR_WIDTH_INCREMENT") && width < _MAX_SECTOR_GRID_COORD - 1 {width += 1}
 			selected_sector.size.x = int(width)
 
 			height := i32(selected_sector.size.y)
 			im.Text("HEIGHT:"); im.SameLine()
 			im.SetNextItemWidth(50.0)
-			im.DragInt("###SELECTED_SECTOR_HEIGHT", &height, v_min = 1, v_max = LVL_MAX_SECTOR_SIZE); im.SameLine(spacing = SPACING)
+			im.DragInt("###SELECTED_SECTOR_HEIGHT", &height, v_min = 1, v_max = _MAX_SECTOR_GRID_COORD); im.SameLine(spacing = SPACING)
 			if im.Button("-###SELECTED_SECTOR_HEIGHT_DECREMENT") && height > 1                       {height -= 1} im.SameLine(spacing = SPACING)
-			if im.Button("+###SELECTED_SECTOR_HEIGHT_INCREMENT") && height < LVL_MAX_SECTOR_SIZE - 1 {height += 1}
+			if im.Button("+###SELECTED_SECTOR_HEIGHT_INCREMENT") && height < _MAX_SECTOR_GRID_COORD - 1 {height += 1}
 			selected_sector.size.y = int(height)
 
-			floor_and_ceiling_increment := f32(LVL_UNIT_PER_GRID/2.0)
+			floor_and_ceiling_increment := f32(_UNIT_PER_GRID/2.0)
 
 			floor_y_max := selected_sector.ceiling_y - floor_and_ceiling_increment
 			im.Text("FLOOR_Y:"); im.SameLine()
@@ -456,8 +676,8 @@ _do_2d_view_ui :: proc() {
 			selected_sector.ceiling_y = max(selected_sector.ceiling_y, ceiling_y_min)
 
 			if im.Button("DELETE") {
-				lvl_delete_sector(&_ctx.level, _ctx.selected_sector_handle)
-				_ctx.selected_sector_handle = LVL_INVALID_SECTOR_HANDLE
+				_delete_sector(_ctx.selected_sector_handle)
+				_ctx.selected_sector_handle = _INVALID_SECTOR_HANDLE
 				_ctx.selected_sector_window_open = false
 			}
 		}
@@ -465,7 +685,7 @@ _do_2d_view_ui :: proc() {
 	}
 
 	if !_ctx.selected_sector_window_open {
-		_ctx.selected_sector_handle = LVL_INVALID_SECTOR_HANDLE
+		_ctx.selected_sector_handle = _INVALID_SECTOR_HANDLE
 	}
 }
 
@@ -505,10 +725,10 @@ _draw_3d_view :: proc(alpha: f32) {
 			continue
 		}
 
-		x1 := f32(sector.position.x)*LVL_UNIT_PER_GRID
-		z1 := f32(sector.position.y)*LVL_UNIT_PER_GRID
-		x2 := f32(sector.position.x + sector.size.x)*LVL_UNIT_PER_GRID
-		z2 := f32(sector.position.y + sector.size.y)*LVL_UNIT_PER_GRID
+		x1 := f32(sector.position.x)*_UNIT_PER_GRID
+		z1 := f32(sector.position.y)*_UNIT_PER_GRID
+		x2 := f32(sector.position.x + sector.size.x)*_UNIT_PER_GRID
+		z2 := f32(sector.position.y + sector.size.y)*_UNIT_PER_GRID
 
 		// floor
 		GFX_draw_3d_rect(
