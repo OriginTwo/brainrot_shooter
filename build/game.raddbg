@@ -1,15 +1,16 @@
 // raddbg 0.9.19 project file
 
-recent_file: path: "../src/game/graphics.odin"
+recent_file: path: "../src/game/scene_editor.odin"
 recent_file: path: "d:/os/obj/amd64fre/minkernel/crts/ucrt/src/appcrt/startup/mt/objfre/amd64/minkernel/crts/ucrt/src/appcrt/startup/abort.cpp"
+recent_file: path: "../src/game/graphics.odin"
 target:
 {
   executable: "game.exe"
-  working_directory: ""
+  working_directory: "../build"
   enabled: 1
 }
 breakpoint:
 {
-  source_location: "../src/game/graphics.odin:1747:1"
-  hit_count: 1
+  source_location: "../src/game/scene_editor.odin:234:1"
+  hit_count: 2
 }

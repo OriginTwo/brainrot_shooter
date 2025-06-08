@@ -29,12 +29,14 @@ def build_game():
 	# set flags
 	match config.lower():
 		case "debug":
+			print("-- Configuration: Debug")
 			flags.append("-o:none")
 			flags.append("-debug")
 			flags.append("-subsystem:console")
 			flags.append("-define:DEV_BUILD=true")
 			pack_asset = False
 		case "release":
+			print("-- Configuration: Release")
 			flags.append("-o:aggressive")
 			flags.append("-subsystem:windows")
 			flags.append("-define:DEV_BUILD=false")
