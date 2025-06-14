@@ -18,7 +18,7 @@ LVL_Wall :: struct {
 	p1: M_Vec2f32,
 	p2: M_Vec2f32,
 	facing: LVL_Wall_Direction,
-	y: f32,
+	y: f32,  // bottom y
 	height: f32,
 }
 

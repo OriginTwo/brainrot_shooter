@@ -95,10 +95,11 @@ _delete_sector :: proc(handle: _Sector_Handle) {
 		sector.is_deleted = true
 
 		for linked_handle in sector.linked_sectors {
-			if linked_sector := _get_sector_ptr(handle); linked_sector != nil {
+			if linked_sector := _get_sector_ptr(linked_handle); linked_sector != nil {
 				for h, i in linked_sector.linked_sectors {
-					if h == linked_handle {
+					if h == handle {
 						unordered_remove(&linked_sector.linked_sectors, i)
+						break
 					}
 				}
 			}
@@ -157,8 +158,8 @@ _construct_actual_level :: proc() {
 	}
 	_INVALID_CELL :: _Cell{-1, -1, -1, -1, -1}
 
-	width := max_pos.x - min_pos.x
-	height := max_pos.y - min_pos.y
+	width := abs(max_pos.x - min_pos.x)
+	height := abs(max_pos.y - min_pos.y)
 
 	cells := make([]_Cell, width*height)
 	defer delete(cells)
@@ -167,8 +168,8 @@ _construct_actual_level :: proc() {
 		cell = _INVALID_CELL
 	}
 
-	for y in 0..<height {
-		for x in 0..<width {
+	for y in min_pos.y..<max_pos.y {
+		for x in min_pos.x..<max_pos.x {
 			sector_index := -1
 			sector_area := _MAX_SECTOR_GRID_COORD*_MAX_SECTOR_GRID_COORD
 
@@ -190,7 +191,7 @@ _construct_actual_level :: proc() {
 			}
 
 			if sector_index != -1 {
-				cells[x + y*width].sector_index = sector_index
+				cells[(x - min_pos.x) + (y - min_pos.y)*width].sector_index = sector_index
 			}
 		}
 	}
@@ -241,36 +242,33 @@ _construct_actual_level :: proc() {
 			// - neighboring cell is in a sector that is not linked
 			// - neighboring cell is in a sector that is linked, but the floor is lower or the ceiling is higher
 
-			/*
-			TODO: fix wall generation:
-			- when coordinate is positive, it works fine
-			- when coordinate is negative, the size is messed up depending on how negative it is
-			*/
-
 			n_is_linked := _is_linked(curr_cell.sector_index, n.sector_index)
 			n_floor_y_diff, n_ceiling_y_diff := _get_floor_and_ceiling_y_diff(curr_cell.sector_index, n.sector_index)
-			fmt.println(n.sector_index == -1, curr_cell.sector_index != n.sector_index, n_is_linked)
+			n_is_in_linked_sector_with_floor_or_ceiling_diff := (n_is_linked && (n_floor_y_diff < 0.0 || n_ceiling_y_diff > 0.0))
 			if n.sector_index == -1 ||
-				(curr_cell.sector_index != n.sector_index && !n_is_linked) ||
-				(curr_cell.sector_index != n.sector_index && n_is_linked && (n_floor_y_diff < 0.0 || n_ceiling_y_diff > 0.0))
+				curr_cell.sector_index != n.sector_index && (
+					!n_is_linked ||
+					n_is_in_linked_sector_with_floor_or_ceiling_diff
+				)
 			{
-				create_wall := false
+				create_wall := true
 				curr_sector := _ctx.level.sectors[curr_cell.sector_index]
-				desired_height := curr_sector.ceiling_y - curr_sector.floor_y
-				if w.sector_index != -1 && w.n_wall_index != -1 {
-					if walls[w.n_wall_index].height == desired_height {
-						// extend existing wall
-						curr_cell.n_wall_index = w.n_wall_index
-						walls[curr_cell.n_wall_index].p2.x += _UNIT_PER_GRID
-					} else {
-						create_wall = true
-					}
-				} else {
-					create_wall = true
+
+				desired_height := abs(curr_sector.ceiling_y - curr_sector.floor_y)
+				if n_is_in_linked_sector_with_floor_or_ceiling_diff {
+					desired_height = abs(n_floor_y_diff)
+				}
+
+				// extend existing wall if possible
+				if (w.sector_index != -1 && w.n_wall_index != -1) &&
+					walls[w.n_wall_index].y == curr_sector.floor_y &&
+					walls[w.n_wall_index].height == desired_height
+				{
+					curr_cell.n_wall_index = w.n_wall_index
+					walls[curr_cell.n_wall_index].p2.x += _UNIT_PER_GRID
 				}
 
 				if create_wall {
-					// create new wall
 					offset := M_Vec2f32{
 						f32(min_pos.x),
 						f32(min_pos.y),
@@ -289,7 +287,7 @@ _construct_actual_level :: proc() {
 	}
 	_ctx.level_preview.walls = walls[:]
 
-	unimplemented("FIX THE WALL GENERATION")
+	// unimplemented("FIX THE WALL GENERATION")
 
 	/*
 	// north edge
