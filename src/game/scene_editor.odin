@@ -151,12 +151,21 @@ _construct_actual_level :: proc() {
 
 	_Cell :: struct {
 		sector_index: int,
-		n_wall_index: int,
-		e_wall_index: int,
-		s_wall_index: int,
-		w_wall_index: int,
+		wall_indices: [LVL_Wall_Direction]int,
+		// n_wall_index: int,
+		// e_wall_index: int,
+		// s_wall_index: int,
+		// w_wall_index: int,
 	}
-	_INVALID_CELL :: _Cell{-1, -1, -1, -1, -1}
+	_INVALID_CELL :: _Cell{
+		sector_index = -1,
+		wall_indices = {
+			.North = -1,
+			.East = -1,
+			.South = -1,
+			.West = -1,
+		},
+	}
 
 	width := abs(max_pos.x - min_pos.x)
 	height := abs(max_pos.y - min_pos.y)
@@ -224,6 +233,130 @@ _construct_actual_level :: proc() {
 		return sector1.floor_y - sector2.floor_y, sector1.ceiling_y - sector2.ceiling_y
 	}
 
+	_construct_wall :: proc(
+		walls: ^[dynamic]LVL_Wall,
+		x, y: int,
+		curr_cell: ^_Cell,
+		neighbor_cells: [LVL_Wall_Direction]_Cell,
+		dir: LVL_Wall_Direction,
+		wall_offset: M_Vec2f32,
+	) {
+		neighbor_cell := neighbor_cells[dir]
+
+		// same sector, no wall
+		if curr_cell.sector_index == neighbor_cell.sector_index {
+			return
+		}
+
+		curr_sector := _ctx.level.sectors[curr_cell.sector_index]
+		neighbor_linked := _is_linked(curr_cell.sector_index, neighbor_cell.sector_index)
+		floor_y_diff, ceiling_y_diff := _get_floor_and_ceiling_y_diff(curr_cell.sector_index, neighbor_cell.sector_index)
+
+		wall_offset := wall_offset
+		wall_p2_offset: M_Vec2f32
+		dir_to_extend: LVL_Wall_Direction
+		facing_dir: LVL_Wall_Direction
+
+		switch dir {
+		case .North:
+			wall_p2_offset.x = _UNIT_PER_GRID
+			dir_to_extend = .West
+			facing_dir = .South
+
+		case .East:
+			wall_offset.x += _UNIT_PER_GRID
+			wall_p2_offset.y = _UNIT_PER_GRID
+			dir_to_extend = .North
+			facing_dir = .West
+
+		case .South:
+			wall_offset.y += _UNIT_PER_GRID
+			wall_p2_offset.x = _UNIT_PER_GRID
+			dir_to_extend = .West
+			facing_dir = .North
+
+		case .West:
+			wall_p2_offset.y = _UNIT_PER_GRID
+			dir_to_extend = .North
+			facing_dir = .East
+		}
+
+		cell_to_extend := neighbor_cells[dir_to_extend]
+
+		// cases where wall(s) have to be constructed:
+		// #1 no neighboring cell
+		// #2 neighboring cell is in another sector that is not linked
+		// #3 neighboring cell is in another sector that is linked, but the floor is lower or the ceiling is higher
+
+		if neighbor_cell.sector_index == -1 || !neighbor_linked {
+			// CASE #1 and CASE #2
+			desired_height := abs(curr_sector.ceiling_y - curr_sector.floor_y)
+
+			// extend existing wall if possible
+			if (cell_to_extend.sector_index != -1 && cell_to_extend.wall_indices[dir] != -1) &&
+				walls[cell_to_extend.wall_indices[dir]].y == curr_sector.floor_y &&
+				walls[cell_to_extend.wall_indices[dir]].height == desired_height
+			{
+				curr_cell.wall_indices[dir] = cell_to_extend.wall_indices[dir]
+				walls[curr_cell.wall_indices[dir]].p2 += wall_p2_offset
+			} else {
+				curr_cell.wall_indices[dir] = len(walls)
+				wall_p1 := M_Vec2f32{f32(x)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID}
+				append(walls, LVL_Wall{
+					p1 = wall_offset + wall_p1,
+					p2 = wall_offset + wall_p1 + wall_p2_offset,
+					facing = facing_dir,
+					y = curr_sector.floor_y,
+					height = desired_height,
+				})
+			}
+		} else if neighbor_linked && (floor_y_diff < 0.0 || ceiling_y_diff > 0.0) {
+			// CASE #3
+			// create or extend
+		}
+
+
+		// n_is_in_linked_sector_with_floor_or_ceiling_diff := (n_is_linked && (n_floor_y_diff < 0.0 || n_ceiling_y_diff > 0.0))
+		// if n.sector_index == -1 ||
+		// 	curr_cell.sector_index != n.sector_index && (
+		// 		!n_is_linked ||
+		// 		n_is_in_linked_sector_with_floor_or_ceiling_diff
+		// 	)
+		// {
+		// 	create_wall := true
+		// 	curr_sector := _ctx.level.sectors[curr_cell.sector_index]
+
+		// 	desired_height := abs(curr_sector.ceiling_y - curr_sector.floor_y)
+		// 	if n_is_in_linked_sector_with_floor_or_ceiling_diff {
+		// 		desired_height = abs(n_floor_y_diff)
+		// 	}
+
+		// 	// extend existing wall if possible
+		// 	if (w.sector_index != -1 && w.n_wall_index != -1) &&
+		// 		walls[w.n_wall_index].y == curr_sector.floor_y &&
+		// 		walls[w.n_wall_index].height == desired_height
+		// 	{
+		// 		curr_cell.n_wall_index = w.n_wall_index
+		// 		walls[curr_cell.n_wall_index].p2.x += _UNIT_PER_GRID
+		// 	}
+
+		// 	if create_wall {
+		// 		offset := M_Vec2f32{
+		// 			f32(min_pos.x),
+		// 			f32(min_pos.y),
+		// 		}*_UNIT_PER_GRID
+		// 		curr_cell.n_wall_index = len(walls)
+		// 		append(&walls, LVL_Wall{
+		// 			p1 = offset + {f32(x + 0)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID},
+		// 			p2 = offset + {f32(x + 1)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID},
+		// 			facing = .South,
+		// 			y = curr_sector.floor_y,
+		// 			height = desired_height,
+		// 		})
+		// 	}
+		// }
+	}
+
 	// walls
 	for y in 0..<height {
 		for x in 0..<width {
@@ -237,55 +370,73 @@ _construct_actual_level :: proc() {
 			w := cells[(x - 1) + y*width] if x > 0          else _INVALID_CELL
 			e := cells[(x + 1) + y*width] if x < width - 1  else _INVALID_CELL
 
+			neighbor_cells := [LVL_Wall_Direction]_Cell{
+				.North = n,
+				.East = e,
+				.South = s,
+				.West = w,
+			}
+			wall_offset := M_Vec2f32{
+				f32(min_pos.x),
+				f32(min_pos.y),
+			}*_UNIT_PER_GRID
+
+			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .North, wall_offset)
+			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .East,  wall_offset)
+			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .South, wall_offset)
+			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .West,  wall_offset)
+
 			// cases where wall(s) have to be constructed:
 			// - no neighboring cell
 			// - neighboring cell is in a sector that is not linked
 			// - neighboring cell is in a sector that is linked, but the floor is lower or the ceiling is higher
 
-			n_is_linked := _is_linked(curr_cell.sector_index, n.sector_index)
-			n_floor_y_diff, n_ceiling_y_diff := _get_floor_and_ceiling_y_diff(curr_cell.sector_index, n.sector_index)
-			n_is_in_linked_sector_with_floor_or_ceiling_diff := (n_is_linked && (n_floor_y_diff < 0.0 || n_ceiling_y_diff > 0.0))
-			if n.sector_index == -1 ||
-				curr_cell.sector_index != n.sector_index && (
-					!n_is_linked ||
-					n_is_in_linked_sector_with_floor_or_ceiling_diff
-				)
-			{
-				create_wall := true
-				curr_sector := _ctx.level.sectors[curr_cell.sector_index]
+			// n_is_linked := _is_linked(curr_cell.sector_index, n.sector_index)
+			// n_floor_y_diff, n_ceiling_y_diff := _get_floor_and_ceiling_y_diff(curr_cell.sector_index, n.sector_index)
+			// n_is_in_linked_sector_with_floor_or_ceiling_diff := (n_is_linked && (n_floor_y_diff < 0.0 || n_ceiling_y_diff > 0.0))
+			// if n.sector_index == -1 ||
+			// 	curr_cell.sector_index != n.sector_index && (
+			// 		!n_is_linked ||
+			// 		n_is_in_linked_sector_with_floor_or_ceiling_diff
+			// 	)
+			// {
+			// 	create_wall := true
+			// 	curr_sector := _ctx.level.sectors[curr_cell.sector_index]
 
-				desired_height := abs(curr_sector.ceiling_y - curr_sector.floor_y)
-				if n_is_in_linked_sector_with_floor_or_ceiling_diff {
-					desired_height = abs(n_floor_y_diff)
-				}
+			// 	desired_height := abs(curr_sector.ceiling_y - curr_sector.floor_y)
+			// 	if n_is_in_linked_sector_with_floor_or_ceiling_diff {
+			// 		desired_height = abs(n_floor_y_diff)
+			// 	}
 
-				// extend existing wall if possible
-				if (w.sector_index != -1 && w.n_wall_index != -1) &&
-					walls[w.n_wall_index].y == curr_sector.floor_y &&
-					walls[w.n_wall_index].height == desired_height
-				{
-					curr_cell.n_wall_index = w.n_wall_index
-					walls[curr_cell.n_wall_index].p2.x += _UNIT_PER_GRID
-				}
+			// 	// extend existing wall if possible
+			// 	if (w.sector_index != -1 && w.wall_indices[.North] != -1) &&
+			// 		walls[w.wall_indices[.North]].y == curr_sector.floor_y &&
+			// 		walls[w.wall_indices[.North]].height == desired_height
+			// 	{
+			// 		curr_cell.wall_indices[.North] = w.wall_indices[.North]
+			// 		walls[curr_cell.wall_indices[.North]].p2.x += _UNIT_PER_GRID
+			// 	}
 
-				if create_wall {
-					offset := M_Vec2f32{
-						f32(min_pos.x),
-						f32(min_pos.y),
-					}*_UNIT_PER_GRID
-					curr_cell.n_wall_index = len(walls)
-					append(&walls, LVL_Wall{
-						p1 = offset + {f32(x + 0)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID},
-						p2 = offset + {f32(x + 1)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID},
-						facing = .South,
-						y = curr_sector.floor_y,
-						height = desired_height,
-					})
-				}
-			}
+			// 	if create_wall {
+			// 		offset := M_Vec2f32{
+			// 			f32(min_pos.x),
+			// 			f32(min_pos.y),
+			// 		}*_UNIT_PER_GRID
+			// 		curr_cell.wall_indices[.North] = len(walls)
+			// 		append(&walls, LVL_Wall{
+			// 			p1 = offset + {f32(x + 0)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID},
+			// 			p2 = offset + {f32(x + 1)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID},
+			// 			facing = .South,
+			// 			y = curr_sector.floor_y,
+			// 			height = desired_height,
+			// 		})
+			// 	}
+			// }
 		}
 	}
 	_ctx.level_preview.walls = walls[:]
+
+	// fmt.println(walls)
 
 	// unimplemented("FIX THE WALL GENERATION")
 

@@ -65,19 +65,40 @@ LVL_draw :: proc(lvl: LVL_Level, ren3d: ^GFX_3D_Renderer) {
 	for wall in lvl.walls {
 		switch wall.facing {
 		case .North:
+			GFX_draw_3d_rect(
+				ren3d,
+				{wall.p1.x, wall.y,               wall.p1.y}, {0.0, 0.0, -1.0}, {127, 127, 127, 255},
+				{wall.p2.x, wall.y,               wall.p1.y}, {0.0, 0.0, -1.0}, {127, 127, 127, 255},
+				{wall.p2.x, wall.y + wall.height, wall.p2.y}, {0.0, 0.0, -1.0}, {127, 127, 127, 255},
+				{wall.p1.x, wall.y + wall.height, wall.p2.y}, {0.0, 0.0, -1.0}, {127, 127, 127, 255},
+			)
 
 		case .East:
+			GFX_draw_3d_rect(
+				ren3d,
+				{wall.p1.x, wall.y,               wall.p1.y}, {+1.0, 0.0, 0.0}, {127, 127, 127, 255},
+				{wall.p2.x, wall.y,               wall.p2.y}, {+1.0, 0.0, 0.0}, {127, 127, 127, 255},
+				{wall.p2.x, wall.y + wall.height, wall.p2.y}, {+1.0, 0.0, 0.0}, {127, 127, 127, 255},
+				{wall.p1.x, wall.y + wall.height, wall.p1.y}, {+1.0, 0.0, 0.0}, {127, 127, 127, 255},
+			)
 
 		case .South:
 			GFX_draw_3d_rect(
 				ren3d,
-				{wall.p1.x, wall.y + wall.height, wall.p2.y}, {0.0, 0.0, 1.0}, {127, 127, 127, 255},
-				{wall.p2.x, wall.y + wall.height, wall.p2.y}, {0.0, 0.0, 1.0}, {127, 127, 127, 255},
-				{wall.p2.x, wall.y,               wall.p1.y}, {0.0, 0.0, 1.0}, {127, 127, 127, 255},
-				{wall.p1.x, wall.y,               wall.p1.y}, {0.0, 0.0, 1.0}, {127, 127, 127, 255},
+				{wall.p1.x, wall.y + wall.height, wall.p2.y}, {0.0, 0.0, +1.0}, {127, 127, 127, 255},
+				{wall.p2.x, wall.y + wall.height, wall.p2.y}, {0.0, 0.0, +1.0}, {127, 127, 127, 255},
+				{wall.p2.x, wall.y,               wall.p1.y}, {0.0, 0.0, +1.0}, {127, 127, 127, 255},
+				{wall.p1.x, wall.y,               wall.p1.y}, {0.0, 0.0, +1.0}, {127, 127, 127, 255},
 			)
 
 		case .West:
+			GFX_draw_3d_rect(
+				ren3d,
+				{wall.p1.x, wall.y + wall.height, wall.p1.y}, {-1.0, 0.0, 0.0}, {127, 127, 127, 255},
+				{wall.p2.x, wall.y + wall.height, wall.p2.y}, {-1.0, 0.0, 0.0}, {127, 127, 127, 255},
+				{wall.p2.x, wall.y,               wall.p2.y}, {-1.0, 0.0, 0.0}, {127, 127, 127, 255},
+				{wall.p1.x, wall.y,               wall.p1.y}, {-1.0, 0.0, 0.0}, {127, 127, 127, 255},
+			)
 		}
 	}
 }
