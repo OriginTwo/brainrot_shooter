@@ -39,495 +39,6 @@ RUNTIME FORMAT:
 		- wall indices    : int
 */
 
-@(private="file")
-_Sector_Handle :: struct {
-	index: int,
-	generation: u32,
-}
-@(private="file") _INVALID_SECTOR_HANDLE :: _Sector_Handle{-1, 0}
-
-@(private="file")
-_Sector :: struct {
-	handle: _Sector_Handle,
-	is_deleted: bool,
-	position: [2]int, // x, z
-	size: [2]int,
-	floor_y: f32,
-	ceiling_y: f32,
-	linked_sectors: [dynamic]_Sector_Handle,
-}
-
-@(private="file")
-_Level :: struct {
-	sectors: [dynamic]_Sector,
-	free_sector_slots: [dynamic]_Sector_Handle,
-}
-
-@(private="file")
-_append_sector :: proc(position, size: [2]int, floor_y, ceiling_y: f32) {
-	sector := _Sector{
-		position = position,
-		size = size,
-		floor_y = floor_y,
-		ceiling_y = ceiling_y,
-	}
-
-	if len(_ctx.level.free_sector_slots) > 0 {
-		handle := pop(&_ctx.level.free_sector_slots)
-		sector.handle = {
-			index = handle.index,
-			generation = handle.generation + 1,
-		}
-		_ctx.level.sectors[handle.index] = sector
-	} else {
-		sector.handle = {
-			index = len(_ctx.level.sectors),
-			generation = 0,
-		}
-		append(&_ctx.level.sectors, sector)
-	}
-}
-
-@(private="file")
-_delete_sector :: proc(handle: _Sector_Handle) {
-	sector := &_ctx.level.sectors[handle.index]
-	if sector.handle.generation == handle.generation {
-		sector.is_deleted = true
-
-		for linked_handle in sector.linked_sectors {
-			if linked_sector := _get_sector_ptr(linked_handle); linked_sector != nil {
-				for h, i in linked_sector.linked_sectors {
-					if h == handle {
-						unordered_remove(&linked_sector.linked_sectors, i)
-						break
-					}
-				}
-			}
-		}
-
-		delete(sector.linked_sectors)
-		append(&_ctx.level.free_sector_slots, handle)
-	}
-}
-
-@(private="file")
-_get_sector_ptr :: proc(handle: _Sector_Handle) -> (result: ^_Sector) {
-	for &sector in _ctx.level.sectors {
-		if sector.handle == handle {
-			result = &sector
-			break
-		}
-	}
-	return
-}
-
-@(private="file")
-_construct_actual_level :: proc() {
-	// TODO: properly clean up the previous level preview data
-	_ctx.level_preview = {}
-	sectors := make([]LVL_Sector, len(_ctx.level.sectors))
-	walls := make([dynamic]LVL_Wall, 0, 32)
-
-	// sectors
-	for sector, i in _ctx.level.sectors {
-		sectors[i] = {
-			position = {f32(sector.position.x)*_UNIT_PER_GRID, f32(sector.position.y)*_UNIT_PER_GRID},
-			size = {f32(sector.size.x)*_UNIT_PER_GRID, f32(sector.size.y)*_UNIT_PER_GRID},
-			floor_y = sector.floor_y,
-			ceiling_y = sector.ceiling_y,
-		}
-	}
-	_ctx.level_preview.sectors = sectors
-
-	min_pos := +_INVALID_GRID_COORD
-	max_pos := -_INVALID_GRID_COORD
-
-	for sector in _ctx.level.sectors {
-		min_pos.x = min(sector.position.x, min_pos.x)
-		min_pos.y = min(sector.position.y, min_pos.y)
-		max_pos.x = max(sector.position.x + sector.size.x, max_pos.x)
-		max_pos.y = max(sector.position.y + sector.size.y, max_pos.y)
-	}
-
-	_Cell :: struct {
-		sector_index: int,
-		wall_indices: [LVL_Wall_Direction]int,
-		// n_wall_index: int,
-		// e_wall_index: int,
-		// s_wall_index: int,
-		// w_wall_index: int,
-	}
-	_INVALID_CELL :: _Cell{
-		sector_index = -1,
-		wall_indices = {
-			.North = -1,
-			.East = -1,
-			.South = -1,
-			.West = -1,
-		},
-	}
-
-	width := abs(max_pos.x - min_pos.x)
-	height := abs(max_pos.y - min_pos.y)
-
-	cells := make([]_Cell, width*height)
-	defer delete(cells)
-
-	for &cell in cells {
-		cell = _INVALID_CELL
-	}
-
-	for y in min_pos.y..<max_pos.y {
-		for x in min_pos.x..<max_pos.x {
-			sector_index := -1
-			sector_area := _MAX_SECTOR_GRID_COORD*_MAX_SECTOR_GRID_COORD
-
-			// TODO: chunk optimization
-			for sector in _ctx.level.sectors {
-				if sector.is_deleted {
-					continue
-				}
-
-				if (sector.position.x <= x && x < sector.position.x + sector.size.x) &&
-					(sector.position.y <= y && y < sector.position.y + sector.size.y)
-				{
-					area := sector.size.x*sector.size.y
-					if area < sector_area {
-						sector_index = sector.handle.index
-						sector_area = area
-					}
-				}
-			}
-
-			if sector_index != -1 {
-				cells[(x - min_pos.x) + (y - min_pos.y)*width].sector_index = sector_index
-			}
-		}
-	}
-
-	_is_linked :: proc(index, suspected_link_index: int) -> bool {
-		if index == -1 || suspected_link_index == -1 {
-			return false
-		}
-
-		sector := _ctx.level.sectors[index]
-		suspected_sector := _ctx.level.sectors[suspected_link_index]
-
-		result := false
-		for linked_sector_handle in sector.linked_sectors {
-			if linked_sector_handle == suspected_sector.handle {
-				result = true
-				break
-			}
-		}
-		return result
-	}
-
-	_get_floor_and_ceiling_y_diff :: proc(index1, index2: int) -> (f32, f32) {
-		if index1 == -1 || index2 == -1 {
-			return 0.0, 0.0
-		}
-
-		sector1 := _ctx.level.sectors[index1]
-		sector2 := _ctx.level.sectors[index2]
-		return sector1.floor_y - sector2.floor_y, sector1.ceiling_y - sector2.ceiling_y
-	}
-
-	_construct_wall :: proc(
-		walls: ^[dynamic]LVL_Wall,
-		x, y: int,
-		curr_cell: ^_Cell,
-		neighbor_cells: [LVL_Wall_Direction]_Cell,
-		dir: LVL_Wall_Direction,
-		wall_offset: M_Vec2f32,
-	) {
-		neighbor_cell := neighbor_cells[dir]
-
-		// same sector, no wall
-		if curr_cell.sector_index == neighbor_cell.sector_index {
-			return
-		}
-
-		curr_sector := _ctx.level.sectors[curr_cell.sector_index]
-		neighbor_linked := _is_linked(curr_cell.sector_index, neighbor_cell.sector_index)
-		floor_y_diff, ceiling_y_diff := _get_floor_and_ceiling_y_diff(curr_cell.sector_index, neighbor_cell.sector_index)
-
-		wall_offset := wall_offset
-		wall_p2_offset: M_Vec2f32
-		dir_to_extend: LVL_Wall_Direction
-		facing_dir: LVL_Wall_Direction
-
-		switch dir {
-		case .North:
-			wall_p2_offset.x = _UNIT_PER_GRID
-			dir_to_extend = .West
-			facing_dir = .South
-
-		case .East:
-			wall_offset.x += _UNIT_PER_GRID
-			wall_p2_offset.y = _UNIT_PER_GRID
-			dir_to_extend = .North
-			facing_dir = .West
-
-		case .South:
-			wall_offset.y += _UNIT_PER_GRID
-			wall_p2_offset.x = _UNIT_PER_GRID
-			dir_to_extend = .West
-			facing_dir = .North
-
-		case .West:
-			wall_p2_offset.y = _UNIT_PER_GRID
-			dir_to_extend = .North
-			facing_dir = .East
-		}
-
-		cell_to_extend := neighbor_cells[dir_to_extend]
-
-		// cases where wall(s) have to be constructed:
-		// #1 no neighboring cell
-		// #2 neighboring cell is in another sector that is not linked
-		// #3 neighboring cell is in another sector that is linked, but the floor is lower or the ceiling is higher
-
-		if neighbor_cell.sector_index == -1 || !neighbor_linked {
-			// CASE #1 and CASE #2
-			desired_height := abs(curr_sector.ceiling_y - curr_sector.floor_y)
-
-			// extend existing wall if possible
-			if (cell_to_extend.sector_index != -1 && cell_to_extend.wall_indices[dir] != -1) &&
-				walls[cell_to_extend.wall_indices[dir]].y == curr_sector.floor_y &&
-				walls[cell_to_extend.wall_indices[dir]].height == desired_height
-			{
-				curr_cell.wall_indices[dir] = cell_to_extend.wall_indices[dir]
-				walls[curr_cell.wall_indices[dir]].p2 += wall_p2_offset
-			} else {
-				curr_cell.wall_indices[dir] = len(walls)
-				wall_p1 := M_Vec2f32{f32(x)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID}
-				append(walls, LVL_Wall{
-					p1 = wall_offset + wall_p1,
-					p2 = wall_offset + wall_p1 + wall_p2_offset,
-					facing = facing_dir,
-					y = curr_sector.floor_y,
-					height = desired_height,
-				})
-			}
-		} else if neighbor_linked && (floor_y_diff < 0.0 || ceiling_y_diff > 0.0) {
-			// CASE #3
-			// create or extend
-		}
-
-
-		// n_is_in_linked_sector_with_floor_or_ceiling_diff := (n_is_linked && (n_floor_y_diff < 0.0 || n_ceiling_y_diff > 0.0))
-		// if n.sector_index == -1 ||
-		// 	curr_cell.sector_index != n.sector_index && (
-		// 		!n_is_linked ||
-		// 		n_is_in_linked_sector_with_floor_or_ceiling_diff
-		// 	)
-		// {
-		// 	create_wall := true
-		// 	curr_sector := _ctx.level.sectors[curr_cell.sector_index]
-
-		// 	desired_height := abs(curr_sector.ceiling_y - curr_sector.floor_y)
-		// 	if n_is_in_linked_sector_with_floor_or_ceiling_diff {
-		// 		desired_height = abs(n_floor_y_diff)
-		// 	}
-
-		// 	// extend existing wall if possible
-		// 	if (w.sector_index != -1 && w.n_wall_index != -1) &&
-		// 		walls[w.n_wall_index].y == curr_sector.floor_y &&
-		// 		walls[w.n_wall_index].height == desired_height
-		// 	{
-		// 		curr_cell.n_wall_index = w.n_wall_index
-		// 		walls[curr_cell.n_wall_index].p2.x += _UNIT_PER_GRID
-		// 	}
-
-		// 	if create_wall {
-		// 		offset := M_Vec2f32{
-		// 			f32(min_pos.x),
-		// 			f32(min_pos.y),
-		// 		}*_UNIT_PER_GRID
-		// 		curr_cell.n_wall_index = len(walls)
-		// 		append(&walls, LVL_Wall{
-		// 			p1 = offset + {f32(x + 0)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID},
-		// 			p2 = offset + {f32(x + 1)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID},
-		// 			facing = .South,
-		// 			y = curr_sector.floor_y,
-		// 			height = desired_height,
-		// 		})
-		// 	}
-		// }
-	}
-
-	// walls
-	for y in 0..<height {
-		for x in 0..<width {
-			curr_cell := &cells[x + y*width]
-			if curr_cell.sector_index == -1 {
-				continue
-			}
-
-			n := cells[x + (y - 1)*width] if y > 0          else _INVALID_CELL
-			s := cells[x + (y + 1)*width] if y < height - 1 else _INVALID_CELL
-			w := cells[(x - 1) + y*width] if x > 0          else _INVALID_CELL
-			e := cells[(x + 1) + y*width] if x < width - 1  else _INVALID_CELL
-
-			neighbor_cells := [LVL_Wall_Direction]_Cell{
-				.North = n,
-				.East = e,
-				.South = s,
-				.West = w,
-			}
-			wall_offset := M_Vec2f32{
-				f32(min_pos.x),
-				f32(min_pos.y),
-			}*_UNIT_PER_GRID
-
-			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .North, wall_offset)
-			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .East,  wall_offset)
-			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .South, wall_offset)
-			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .West,  wall_offset)
-
-			// cases where wall(s) have to be constructed:
-			// - no neighboring cell
-			// - neighboring cell is in a sector that is not linked
-			// - neighboring cell is in a sector that is linked, but the floor is lower or the ceiling is higher
-
-			// n_is_linked := _is_linked(curr_cell.sector_index, n.sector_index)
-			// n_floor_y_diff, n_ceiling_y_diff := _get_floor_and_ceiling_y_diff(curr_cell.sector_index, n.sector_index)
-			// n_is_in_linked_sector_with_floor_or_ceiling_diff := (n_is_linked && (n_floor_y_diff < 0.0 || n_ceiling_y_diff > 0.0))
-			// if n.sector_index == -1 ||
-			// 	curr_cell.sector_index != n.sector_index && (
-			// 		!n_is_linked ||
-			// 		n_is_in_linked_sector_with_floor_or_ceiling_diff
-			// 	)
-			// {
-			// 	create_wall := true
-			// 	curr_sector := _ctx.level.sectors[curr_cell.sector_index]
-
-			// 	desired_height := abs(curr_sector.ceiling_y - curr_sector.floor_y)
-			// 	if n_is_in_linked_sector_with_floor_or_ceiling_diff {
-			// 		desired_height = abs(n_floor_y_diff)
-			// 	}
-
-			// 	// extend existing wall if possible
-			// 	if (w.sector_index != -1 && w.wall_indices[.North] != -1) &&
-			// 		walls[w.wall_indices[.North]].y == curr_sector.floor_y &&
-			// 		walls[w.wall_indices[.North]].height == desired_height
-			// 	{
-			// 		curr_cell.wall_indices[.North] = w.wall_indices[.North]
-			// 		walls[curr_cell.wall_indices[.North]].p2.x += _UNIT_PER_GRID
-			// 	}
-
-			// 	if create_wall {
-			// 		offset := M_Vec2f32{
-			// 			f32(min_pos.x),
-			// 			f32(min_pos.y),
-			// 		}*_UNIT_PER_GRID
-			// 		curr_cell.wall_indices[.North] = len(walls)
-			// 		append(&walls, LVL_Wall{
-			// 			p1 = offset + {f32(x + 0)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID},
-			// 			p2 = offset + {f32(x + 1)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID},
-			// 			facing = .South,
-			// 			y = curr_sector.floor_y,
-			// 			height = desired_height,
-			// 		})
-			// 	}
-			// }
-		}
-	}
-	_ctx.level_preview.walls = walls[:]
-
-	// fmt.println(walls)
-
-	// unimplemented("FIX THE WALL GENERATION")
-
-	/*
-	// north edge
-	if !n.exist {
-		if w.exist && w.n_edge_index != -1 {
-			// extend edge
-			curr_cell.n_edge_index = w.n_edge_index
-			edges[curr_cell.n_edge_index].p2.x = f32(x + 1)*TILE_SIZE
-		} else {
-			// create new edge
-			curr_cell.n_edge_index = len(edges)
-			append(&edges, Edge{
-				{f32(  x  )*TILE_SIZE, f32(y)*TILE_SIZE},
-				{f32(x + 1)*TILE_SIZE, f32(y)*TILE_SIZE},
-				{0.0, -1.0},
-			})
-		}
-	}
-
-	// NOTE: south edge swap p1 and p2 so that when drawing, the
-	// order of the points will be counterclockwise
-	// south edge
-	if !s.exist {
-		if w.exist && w.s_edge_index != -1 {
-			// extend edge
-			curr_cell.s_edge_index = w.s_edge_index
-			edges[curr_cell.s_edge_index].p1.x = f32(x + 1)*TILE_SIZE
-		} else {
-			// create new edge
-			curr_cell.s_edge_index = len(edges)
-			append(&edges, Edge{
-				{f32(x + 1)*TILE_SIZE, f32(y + 1)*TILE_SIZE},
-				{f32(  x  )*TILE_SIZE, f32(y + 1)*TILE_SIZE},
-				{0.0, 1.0},
-			})
-		}
-	}
-
-	// NOTE: west edge swap p1 and p2 so that when drawing, the
-	// order of the points will be counterclockwise
-	// west edge
-	if !w.exist {
-		if n.exist && n.w_edge_index != -1 {
-			// extend edge
-			curr_cell.w_edge_index = n.w_edge_index
-			edges[curr_cell.w_edge_index].p1.y = f32(y + 1)*TILE_SIZE
-		} else {
-			// create new edge
-			curr_cell.w_edge_index = len(edges)
-			append(&edges, Edge{
-				{f32(x)*TILE_SIZE, f32(y + 1)*TILE_SIZE},
-				{f32(x)*TILE_SIZE, f32(  y  )*TILE_SIZE},
-				{-1.0, 0.0},
-			})
-		}
-	}
-
-	// east edge
-	if !e.exist {
-		if n.exist && n.e_edge_index != -1 {
-			// extend edge
-			curr_cell.e_edge_index = n.e_edge_index
-			edges[curr_cell.e_edge_index].p2.y = f32(y + 1)*TILE_SIZE
-		} else {
-			// create new edge
-			curr_cell.e_edge_index = len(edges)
-			append(&edges, Edge{
-				{f32(x + 1)*TILE_SIZE, f32(  y  )*TILE_SIZE},
-				{f32(x + 1)*TILE_SIZE, f32(y + 1)*TILE_SIZE},
-				{1.0, 0.0},
-			})
-		}
-	}
-	*/
-}
-
-
-
-@(private="file") _UNIT_PER_GRID :: 0.5
-@(private="file") _MAX_SECTOR_GRID_COORD :: 65535
-@(private="file") _INVALID_GRID_COORD :: [2]int{_MAX_SECTOR_GRID_COORD, _MAX_SECTOR_GRID_COORD}
-@(private="file") _2D_GRID_SIZE :: 24
-@(private="file") _2D_GRID_POINT_SIZE :: 4
-@(private="file") _2D_CAM_SPEED :: 400.0
-@(private="file") _DEFAULT_FLOOR_Y :: 0.0
-@(private="file") _DEFAULT_CEILING_Y :: 3.0
-@(private="file") _MAIN_UI_WINDOW_POSITION :: M_Vec2f32{20.0, 20.0}
-@(private="file") _UI_WINDOW_OPEN_OFFSET :: M_Vec2f32{30.0, 30.0}
-
 
 when DEV_BUILD {
 
@@ -574,6 +85,7 @@ scn_editor_init :: proc() {
 	GFX_create_3d_renderer(&_ctx.ren3d, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
 	GFX_create_post_fx_renderer(&_ctx.ren_fx, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
 
+	_ctx.cam.position.y = 1.5
 	_ctx.cam.fovy = math.PI/2.0
 
 	_ctx.mouse_pressed_grid = _INVALID_GRID_COORD
@@ -591,9 +103,18 @@ scn_editor_init :: proc() {
 }
 
 scn_editor_uninit :: proc() {
+	for &sector in _ctx.level.sectors {
+		delete(sector.linked_sectors)
+	}
+	delete(_ctx.level.sectors)
+	delete(_ctx.level.free_sector_slots)
+
+	_delete_level_preview()
+
 	GFX_destroy_2d_renderer(&_ctx.ren2d)
 	GFX_destroy_3d_renderer(&_ctx.ren3d)
 	GFX_destroy_post_fx_renderer(&_ctx.ren_fx)
+
 	_ctx = {}
 }
 
@@ -622,7 +143,7 @@ scn_editor_draw :: proc(alpha: f32) {
 
 	if _ctx.is_3d_view {
 		if !_ctx.was_3d_view {
-			_construct_actual_level()
+			_construct_level_preview()
 		}
 
 		_draw_3d_view(alpha)
@@ -645,6 +166,18 @@ scn_editor_draw :: proc(alpha: f32) {
 	sg.commit()
 }
 
+
+
+@(private="file") _UNIT_PER_GRID :: 0.5
+@(private="file") _MAX_SECTOR_GRID_COORD :: 65535
+@(private="file") _INVALID_GRID_COORD :: [2]int{_MAX_SECTOR_GRID_COORD, _MAX_SECTOR_GRID_COORD}
+@(private="file") _2D_GRID_SIZE :: 24
+@(private="file") _2D_GRID_POINT_SIZE :: 4
+@(private="file") _2D_CAM_SPEED :: 400.0
+@(private="file") _DEFAULT_FLOOR_Y :: 0.0
+@(private="file") _DEFAULT_CEILING_Y :: 3.0
+@(private="file") _MAIN_UI_WINDOW_POSITION :: M_Vec2f32{20.0, 20.0}
+@(private="file") _UI_WINDOW_OPEN_OFFSET :: M_Vec2f32{30.0, 30.0}
 
 
 @(private="file")
@@ -1079,6 +612,375 @@ _do_3d_view_ui :: proc() {
 		im.SliderFloat("CAM_ROLL", &_ctx.cam.roll, -30.0, 30.0)
 	}
 	im.End()
+}
+
+
+///////////////////////////////////////////////////////////
+// EDITOR LEVEL
+///////////////////////////////////////////////////////////
+@(private="file")
+_Sector_Handle :: struct {
+	index: int,
+	generation: u32,
+}
+@(private="file") _INVALID_SECTOR_HANDLE :: _Sector_Handle{-1, 0}
+
+@(private="file")
+_Sector :: struct {
+	handle: _Sector_Handle,
+	is_deleted: bool,
+	position: [2]int, // x, z
+	size: [2]int,
+	floor_y: f32,
+	ceiling_y: f32,
+	linked_sectors: [dynamic]_Sector_Handle,
+}
+
+@(private="file")
+_Level :: struct {
+	sectors: [dynamic]_Sector,
+	free_sector_slots: [dynamic]_Sector_Handle,
+}
+
+@(private="file")
+_append_sector :: proc(position, size: [2]int, floor_y, ceiling_y: f32) {
+	sector := _Sector{
+		position = position,
+		size = size,
+		floor_y = floor_y,
+		ceiling_y = ceiling_y,
+	}
+
+	if len(_ctx.level.free_sector_slots) > 0 {
+		handle := pop(&_ctx.level.free_sector_slots)
+		sector.handle = {
+			index = handle.index,
+			generation = handle.generation + 1,
+		}
+		_ctx.level.sectors[handle.index] = sector
+	} else {
+		sector.handle = {
+			index = len(_ctx.level.sectors),
+			generation = 0,
+		}
+		append(&_ctx.level.sectors, sector)
+	}
+}
+
+@(private="file")
+_delete_sector :: proc(handle: _Sector_Handle) {
+	sector := &_ctx.level.sectors[handle.index]
+	if sector.handle.generation == handle.generation {
+		sector.is_deleted = true
+
+		for linked_handle in sector.linked_sectors {
+			if linked_sector := _get_sector_ptr(linked_handle); linked_sector != nil {
+				for h, i in linked_sector.linked_sectors {
+					if h == handle {
+						unordered_remove(&linked_sector.linked_sectors, i)
+						break
+					}
+				}
+			}
+		}
+
+		delete(sector.linked_sectors)
+		append(&_ctx.level.free_sector_slots, handle)
+	}
+}
+
+@(private="file")
+_get_sector_ptr :: proc(handle: _Sector_Handle) -> (result: ^_Sector) {
+	for &sector in _ctx.level.sectors {
+		if sector.handle == handle {
+			result = &sector
+			break
+		}
+	}
+	return
+}
+
+@(private="file")
+_construct_level_preview :: proc() {
+	_delete_level_preview()
+
+	sectors := make([]LVL_Sector, len(_ctx.level.sectors))
+	walls := make([dynamic]LVL_Wall, 0, 32)
+
+	// sectors
+	for sector, i in _ctx.level.sectors {
+		sectors[i] = {
+			position = {f32(sector.position.x)*_UNIT_PER_GRID, f32(sector.position.y)*_UNIT_PER_GRID},
+			size = {f32(sector.size.x)*_UNIT_PER_GRID, f32(sector.size.y)*_UNIT_PER_GRID},
+			floor_y = sector.floor_y,
+			ceiling_y = sector.ceiling_y,
+		}
+	}
+	_ctx.level_preview.sectors = sectors
+
+	min_pos := +_INVALID_GRID_COORD
+	max_pos := -_INVALID_GRID_COORD
+
+	for sector in _ctx.level.sectors {
+		min_pos.x = min(sector.position.x, min_pos.x)
+		min_pos.y = min(sector.position.y, min_pos.y)
+		max_pos.x = max(sector.position.x + sector.size.x, max_pos.x)
+		max_pos.y = max(sector.position.y + sector.size.y, max_pos.y)
+	}
+
+	_Cell :: struct {
+		sector_index: int,
+		// if no floor_y and ceiling_y difference: always 0
+		// otherwise: 0 = bottom wall, 1 = top wall
+		wall_indices: [LVL_Wall_Direction][2]int,
+	}
+	_INVALID_CELL :: _Cell{
+		sector_index = -1,
+		wall_indices = {
+			.North = {-1, -1},
+			.East  = {-1, -1},
+			.South = {-1, -1},
+			.West  = {-1, -1},
+		},
+	}
+
+	width := abs(max_pos.x - min_pos.x)
+	height := abs(max_pos.y - min_pos.y)
+
+	cells := make([]_Cell, width*height)
+	defer delete(cells)
+
+	for &cell in cells {
+		cell = _INVALID_CELL
+	}
+
+	// set cells' data
+	for y in min_pos.y..<max_pos.y {
+		for x in min_pos.x..<max_pos.x {
+			sector_index := -1
+			sector_area := _MAX_SECTOR_GRID_COORD*_MAX_SECTOR_GRID_COORD
+
+			// TODO: chunk optimization
+			for sector in _ctx.level.sectors {
+				if sector.is_deleted {
+					continue
+				}
+
+				if (sector.position.x <= x && x < sector.position.x + sector.size.x) &&
+					(sector.position.y <= y && y < sector.position.y + sector.size.y)
+				{
+					area := sector.size.x*sector.size.y
+					if area < sector_area {
+						sector_index = sector.handle.index
+						sector_area = area
+					}
+				}
+			}
+
+			if sector_index != -1 {
+				cells[(x - min_pos.x) + (y - min_pos.y)*width].sector_index = sector_index
+			}
+		}
+	}
+
+	_is_linked :: proc(index, suspected_link_index: int) -> bool {
+		if index == -1 || suspected_link_index == -1 {
+			return false
+		}
+
+		sector := _ctx.level.sectors[index]
+		suspected_sector := _ctx.level.sectors[suspected_link_index]
+
+		result := false
+		for linked_sector_handle in sector.linked_sectors {
+			if linked_sector_handle == suspected_sector.handle {
+				result = true
+				break
+			}
+		}
+		return result
+	}
+
+	_get_floor_and_ceiling_y_diff :: proc(index1, index2: int) -> (f32, f32) {
+		if index1 == -1 || index2 == -1 {
+			return 0.0, 0.0
+		}
+
+		sector1 := _ctx.level.sectors[index1]
+		sector2 := _ctx.level.sectors[index2]
+		return sector1.floor_y - sector2.floor_y, sector1.ceiling_y - sector2.ceiling_y
+	}
+
+	_construct_wall :: proc(
+		walls: ^[dynamic]LVL_Wall,
+		x, y: int,
+		curr_cell: ^_Cell,
+		neighbor_cells: [LVL_Wall_Direction]_Cell,
+		dir: LVL_Wall_Direction,
+		wall_offset: M_Vec2f32,
+	) {
+		neighbor_cell := neighbor_cells[dir]
+
+		// same sector = no wall
+		if curr_cell.sector_index == neighbor_cell.sector_index {
+			return
+		}
+
+		curr_sector := _ctx.level.sectors[curr_cell.sector_index]
+		neighbor_linked := _is_linked(curr_cell.sector_index, neighbor_cell.sector_index)
+		floor_y_diff, ceiling_y_diff := _get_floor_and_ceiling_y_diff(curr_cell.sector_index, neighbor_cell.sector_index)
+
+		wall_offset := wall_offset
+		wall_p2_offset: M_Vec2f32
+		dir_to_extend: LVL_Wall_Direction
+		facing_dir: LVL_Wall_Direction
+
+		switch dir {
+		case .North:
+			wall_p2_offset.x = _UNIT_PER_GRID
+			dir_to_extend = .West
+			facing_dir = .South
+
+		case .East:
+			wall_offset.x += _UNIT_PER_GRID
+			wall_p2_offset.y = _UNIT_PER_GRID
+			dir_to_extend = .North
+			facing_dir = .West
+
+		case .South:
+			wall_offset.y += _UNIT_PER_GRID
+			wall_p2_offset.x = _UNIT_PER_GRID
+			dir_to_extend = .West
+			facing_dir = .North
+
+		case .West:
+			wall_p2_offset.y = _UNIT_PER_GRID
+			dir_to_extend = .North
+			facing_dir = .East
+		}
+
+		cell_to_extend := neighbor_cells[dir_to_extend]
+
+		// cases where wall(s) have to be constructed:
+		// #1 no neighboring cell
+		// #2 neighboring cell is in another sector that is not linked
+		// #3 neighboring cell is in another sector that is linked, but the floor is lower or the ceiling is higher
+
+		if neighbor_cell.sector_index == -1 || !neighbor_linked {
+			// CASE #1 and CASE #2
+			desired_height := abs(curr_sector.ceiling_y - curr_sector.floor_y)
+
+			// extend existing wall if possible
+			if (cell_to_extend.sector_index != -1 && cell_to_extend.wall_indices[dir][0] != -1) &&
+				walls[cell_to_extend.wall_indices[dir][0]].y == curr_sector.floor_y &&
+				walls[cell_to_extend.wall_indices[dir][0]].height == desired_height
+			{
+				curr_cell.wall_indices[dir][0] = cell_to_extend.wall_indices[dir][0]
+				walls[curr_cell.wall_indices[dir][0]].p2 += wall_p2_offset
+			} else {
+				curr_cell.wall_indices[dir][0] = len(walls)
+				wall_p1 := M_Vec2f32{f32(x)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID}
+				append(walls, LVL_Wall{
+					p1 = wall_offset + wall_p1,
+					p2 = wall_offset + wall_p1 + wall_p2_offset,
+					facing = facing_dir,
+					y = curr_sector.floor_y,
+					height = desired_height,
+				})
+			}
+		} else if neighbor_linked && (floor_y_diff < 0.0 || ceiling_y_diff > 0.0) {
+			// CASE #3
+			if floor_y_diff < 0.0 {
+				desired_height := abs(floor_y_diff)
+
+				if (cell_to_extend.sector_index != -1 && cell_to_extend.wall_indices[dir][0] != -1) &&
+					walls[cell_to_extend.wall_indices[dir][0]].y == curr_sector.floor_y &&
+					walls[cell_to_extend.wall_indices[dir][0]].height == desired_height
+				{
+					curr_cell.wall_indices[dir][0] = cell_to_extend.wall_indices[dir][0]
+					walls[curr_cell.wall_indices[dir][0]].p2 += wall_p2_offset
+				} else {
+					curr_cell.wall_indices[dir][0] = len(walls)
+					wall_p1 := M_Vec2f32{f32(x)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID}
+					append(walls, LVL_Wall{
+						p1 = wall_offset + wall_p1,
+						p2 = wall_offset + wall_p1 + wall_p2_offset,
+						facing = facing_dir,
+						y = curr_sector.floor_y,
+						height = desired_height,
+					})
+				}
+			}
+
+			if ceiling_y_diff > 0.0 {
+				desired_y := curr_sector.ceiling_y - ceiling_y_diff
+				desired_height := abs(ceiling_y_diff)
+
+				if (cell_to_extend.sector_index != -1 && cell_to_extend.wall_indices[dir][1] != -1) &&
+					walls[cell_to_extend.wall_indices[dir][1]].y == desired_y &&
+					walls[cell_to_extend.wall_indices[dir][1]].height == desired_height
+				{
+					curr_cell.wall_indices[dir][1] = cell_to_extend.wall_indices[dir][1]
+					walls[curr_cell.wall_indices[dir][1]].p2 += wall_p2_offset
+				} else {
+					curr_cell.wall_indices[dir][1] = len(walls)
+					wall_p1 := M_Vec2f32{f32(x)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID}
+					append(walls, LVL_Wall{
+						p1 = wall_offset + wall_p1,
+						p2 = wall_offset + wall_p1 + wall_p2_offset,
+						facing = facing_dir,
+						y = desired_y,
+						height = desired_height,
+					})
+				}
+			}
+		}
+	}
+
+	// construct walls
+	for y in 0..<height {
+		for x in 0..<width {
+			curr_cell := &cells[x + y*width]
+			if curr_cell.sector_index == -1 {
+				continue
+			}
+
+			n := cells[x + (y - 1)*width] if y > 0          else _INVALID_CELL
+			s := cells[x + (y + 1)*width] if y < height - 1 else _INVALID_CELL
+			w := cells[(x - 1) + y*width] if x > 0          else _INVALID_CELL
+			e := cells[(x + 1) + y*width] if x < width - 1  else _INVALID_CELL
+
+			neighbor_cells := [LVL_Wall_Direction]_Cell{
+				.North = n,
+				.East = e,
+				.South = s,
+				.West = w,
+			}
+			wall_offset := M_Vec2f32{
+				f32(min_pos.x),
+				f32(min_pos.y),
+			}*_UNIT_PER_GRID
+
+			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .North, wall_offset)
+			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .East,  wall_offset)
+			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .South, wall_offset)
+			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .West,  wall_offset)
+		}
+	}
+	_ctx.level_preview.walls = walls[:]
+}
+
+@(private="file")
+_delete_level_preview :: proc() {
+	if _ctx.level_preview.sectors != nil {
+		delete(_ctx.level_preview.sectors)
+	}
+
+	if _ctx.level_preview.walls != nil {
+		delete(_ctx.level_preview.walls)
+	}
+
+	_ctx.level_preview = {}
 }
 
 } // when DEV_BUILD
