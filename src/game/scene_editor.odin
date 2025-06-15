@@ -81,7 +81,7 @@ _ctx: struct {
 }
 
 scn_editor_init :: proc() {
-	GFX_create_2d_renderer(&_ctx.ren2d)
+	GFX_create_2d_renderer(&_ctx.ren2d, 96000, 144000, 256)
 	GFX_create_3d_renderer(&_ctx.ren3d, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
 	GFX_create_post_fx_renderer(&_ctx.ren_fx, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
 
@@ -108,6 +108,11 @@ scn_editor_uninit :: proc() {
 	}
 	delete(_ctx.level.sectors)
 	delete(_ctx.level.free_sector_slots)
+
+	for _, &chunk in _ctx.level.chunks {
+		delete(chunk)
+	}
+	delete(_ctx.level.chunks)
 
 	_delete_level_preview()
 
@@ -168,6 +173,7 @@ scn_editor_draw :: proc(alpha: f32) {
 
 
 
+@(private="file") _GRID_PER_CHUNK :: 16
 @(private="file") _UNIT_PER_GRID :: 0.5
 @(private="file") _MAX_SECTOR_GRID_COORD :: 65535
 @(private="file") _INVALID_GRID_COORD :: [2]int{_MAX_SECTOR_GRID_COORD, _MAX_SECTOR_GRID_COORD}
@@ -203,22 +209,27 @@ _tick_2d_view :: proc(input: INP_State, delta: f32) {
 	}
 
 	if !INP_is_mouse_down(input, .Left) && INP_get_mouse_delta(input) != {} {
-		// TODO: chunk optimization
 		hovering_sector_handle := _INVALID_SECTOR_HANDLE
 		hovering_sector_area := _MAX_SECTOR_GRID_COORD*_MAX_SECTOR_GRID_COORD
 
-		for sector in _ctx.level.sectors {
-			if sector.is_deleted {
-				continue
-			}
+		chunk_coord := _get_chunk_coord(_ctx.grid_mouse_pos)
+		chunk, chunk_ok := _ctx.level.chunks[chunk_coord]
+		if chunk_ok {
+			for handle in chunk {
+				if sector := _get_sector_ptr(handle); sector != nil {
+					if sector.is_deleted {
+						continue
+					}
 
-			if (sector.position.x <= _ctx.grid_mouse_pos.x && _ctx.grid_mouse_pos.x < sector.position.x + sector.size.x) &&
-				(sector.position.y <= _ctx.grid_mouse_pos.y && _ctx.grid_mouse_pos.y < sector.position.y + sector.size.y)
-			{
-				area := sector.size.x*sector.size.y
-				if area < hovering_sector_area {
-					hovering_sector_handle = sector.handle
-					hovering_sector_area = area
+					if (sector.position.x <= _ctx.grid_mouse_pos.x && _ctx.grid_mouse_pos.x < sector.position.x + sector.size.x) &&
+						(sector.position.y <= _ctx.grid_mouse_pos.y && _ctx.grid_mouse_pos.y < sector.position.y + sector.size.y)
+					{
+						area := sector.size.x*sector.size.y
+						if area < hovering_sector_area {
+							hovering_sector_handle = sector.handle
+							hovering_sector_area = area
+						}
+					}
 				}
 			}
 		}
@@ -338,8 +349,8 @@ _draw_2d_view :: proc(alpha: f32) {
 		end_x := int(maximum.x)/_2D_GRID_SIZE + 1
 		end_y := int(maximum.y)/_2D_GRID_SIZE + 1
 
-		for y := start_y; y < end_y; y += 1 {
-			for x := start_x; x < end_x; x += 1 {
+		for y in start_y..<end_y {
+			for x in start_x..<end_x {
 				GFX_draw_2d_rect(
 					&_ctx.ren2d,
 					{
@@ -347,6 +358,33 @@ _draw_2d_view :: proc(alpha: f32) {
 						f32(y*_2D_GRID_SIZE) - _2D_GRID_POINT_SIZE/2.0 - _ctx.offset_2d.y,
 						_2D_GRID_POINT_SIZE,
 						_2D_GRID_POINT_SIZE,
+					},
+					{127, 127, 127, 200},
+				)
+			}
+		}
+	}
+
+	// draw chunk boundary
+	GFX_set_2d_layer(&_ctx.ren2d, -9)
+	{
+		minimum := _ctx.offset_2d
+		maximum := _ctx.offset_2d + {f32(win_size.x), f32(win_size.y)}
+
+		start_x := (int(minimum.x)/_2D_GRID_SIZE)/_GRID_PER_CHUNK - 1
+		start_y := (int(minimum.y)/_2D_GRID_SIZE)/_GRID_PER_CHUNK - 1
+		end_x := (int(maximum.x)/_2D_GRID_SIZE + 1)/_GRID_PER_CHUNK + 1
+		end_y := (int(maximum.y)/_2D_GRID_SIZE + 1)/_GRID_PER_CHUNK + 1
+
+		for y in start_y..<end_y {
+			for x in start_x..<end_x {
+				GFX_draw_2d_rect_line(
+					&_ctx.ren2d,
+					{
+						f32(x*_2D_GRID_SIZE*_GRID_PER_CHUNK) - _ctx.offset_2d.x,
+						f32(y*_2D_GRID_SIZE*_GRID_PER_CHUNK) - _ctx.offset_2d.y,
+						_2D_GRID_SIZE*_GRID_PER_CHUNK,
+						_2D_GRID_SIZE*_GRID_PER_CHUNK,
 					},
 					{127, 127, 127, 200},
 				)
@@ -400,6 +438,25 @@ _draw_2d_view :: proc(alpha: f32) {
 
 		GFX_set_2d_layer(&_ctx.ren2d, 0)
 		GFX_draw_2d_rect_line(&_ctx.ren2d, rect, {255, 255, 255, 200}, 2.0)
+
+		if _ctx.hovering_sector_handle == sector.handle {
+			min_chunk_coord := _get_chunk_coord(sector.position)
+			max_chunk_coord := _get_chunk_coord(sector.position + sector.size - 1) + 1
+			for y in min_chunk_coord.y..<max_chunk_coord.y {
+				for x in min_chunk_coord.x..<max_chunk_coord.x {
+					GFX_draw_2d_rect_line(
+						&_ctx.ren2d,
+						{
+							f32(x*_2D_GRID_SIZE*_GRID_PER_CHUNK) - _ctx.offset_2d.x,
+							f32(y*_2D_GRID_SIZE*_GRID_PER_CHUNK) - _ctx.offset_2d.y,
+							_2D_GRID_SIZE*_GRID_PER_CHUNK,
+							_2D_GRID_SIZE*_GRID_PER_CHUNK,
+						},
+						{0, 255, 255, 100},
+					)
+				}
+			}
+		}
 	}
 
 	// draw sector preview
@@ -552,37 +609,6 @@ _draw_3d_view :: proc(alpha: f32) {
 
 	LVL_draw(_ctx.level_preview, &_ctx.ren3d)
 
-	// for sector in _ctx.level.sectors {
-	// 	if sector.is_deleted {
-	// 		continue
-	// 	}
-
-	// 	x1 := f32(sector.position.x)*_UNIT_PER_GRID
-	// 	z1 := f32(sector.position.y)*_UNIT_PER_GRID
-	// 	x2 := f32(sector.position.x + sector.size.x)*_UNIT_PER_GRID
-	// 	z2 := f32(sector.position.y + sector.size.y)*_UNIT_PER_GRID
-
-	// 	// floor
-	// 	GFX_draw_3d_rect(
-	// 		&_ctx.ren3d,
-	// 		{x1, sector.floor_y, z1}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-	// 		{x2, sector.floor_y, z1}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-	// 		{x2, sector.floor_y, z2}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-	// 		{x1, sector.floor_y, z2}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-	// 	)
-
-	// 	// ceiling
-	// 	GFX_draw_3d_rect(
-	// 		&_ctx.ren3d,
-	// 		{x1, sector.ceiling_y, z2}, {0.0, -1.0, 0.0}, {127, 127, 127, 255},
-	// 		{x2, sector.ceiling_y, z2}, {0.0, -1.0, 0.0}, {127, 127, 127, 255},
-	// 		{x2, sector.ceiling_y, z1}, {0.0, -1.0, 0.0}, {127, 127, 127, 255},
-	// 		{x1, sector.ceiling_y, z1}, {0.0, -1.0, 0.0}, {127, 127, 127, 255},
-	// 	)
-
-	// 	// walls
-	// }
-
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = _ctx.cam.position,
 		intensity = 1.0,
@@ -640,6 +666,19 @@ _Sector :: struct {
 _Level :: struct {
 	sectors: [dynamic]_Sector,
 	free_sector_slots: [dynamic]_Sector_Handle,
+	chunks: map[[2]int][dynamic]_Sector_Handle,
+}
+
+@(private="file")
+_get_chunk_coord :: proc(position: [2]int) -> [2]int {
+	result := position/_GRID_PER_CHUNK
+	if position.x < 0 {
+		result.x -= 1
+	}
+	if position.y < 0 {
+		result.y -= 1
+	}
+	return result
 }
 
 @(private="file")
@@ -665,6 +704,17 @@ _append_sector :: proc(position, size: [2]int, floor_y, ceiling_y: f32) {
 		}
 		append(&_ctx.level.sectors, sector)
 	}
+
+	min_chunk_coord := _get_chunk_coord(position)
+	max_chunk_coord := _get_chunk_coord(position + size - 1) + 1
+	for y in min_chunk_coord.y..<max_chunk_coord.y {
+		for x in min_chunk_coord.x..<max_chunk_coord.x {
+			if ([2]int{x, y}) not_in _ctx.level.chunks {
+				_ctx.level.chunks[{x, y}] = make([dynamic]_Sector_Handle, 0, 8)
+			}
+			append(&_ctx.level.chunks[{x, y}], sector.handle)
+		}
+	}
 }
 
 @(private="file")
@@ -686,16 +736,29 @@ _delete_sector :: proc(handle: _Sector_Handle) {
 
 		delete(sector.linked_sectors)
 		append(&_ctx.level.free_sector_slots, handle)
+
+		min_chunk_coord := _get_chunk_coord(sector.position)
+		max_chunk_coord := _get_chunk_coord(sector.position + sector.size - 1) + 1
+		for y in min_chunk_coord.y..<max_chunk_coord.y {
+			for x in min_chunk_coord.x..<max_chunk_coord.x {
+				if chunk, chunk_ok := &_ctx.level.chunks[{x, y}]; chunk_ok {
+					for chunk_sector_handle, i in chunk {
+						if chunk_sector_handle == sector.handle {
+							unordered_remove(chunk, i)
+							break
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
 @(private="file")
 _get_sector_ptr :: proc(handle: _Sector_Handle) -> (result: ^_Sector) {
-	for &sector in _ctx.level.sectors {
-		if sector.handle == handle {
-			result = &sector
-			break
-		}
+	sector := &_ctx.level.sectors[handle.index]
+	if sector.handle.generation == handle.generation {
+		result = sector
 	}
 	return
 }
@@ -760,19 +823,24 @@ _construct_level_preview :: proc() {
 			sector_index := -1
 			sector_area := _MAX_SECTOR_GRID_COORD*_MAX_SECTOR_GRID_COORD
 
-			// TODO: chunk optimization
-			for sector in _ctx.level.sectors {
-				if sector.is_deleted {
-					continue
-				}
+			chunk_coord := _get_chunk_coord({x, y})
+			chunk, chunk_ok := _ctx.level.chunks[chunk_coord]
+			if chunk_ok {
+				for handle in chunk {
+					if sector := _get_sector_ptr(handle); sector != nil {
+						if sector.is_deleted {
+							continue
+						}
 
-				if (sector.position.x <= x && x < sector.position.x + sector.size.x) &&
-					(sector.position.y <= y && y < sector.position.y + sector.size.y)
-				{
-					area := sector.size.x*sector.size.y
-					if area < sector_area {
-						sector_index = sector.handle.index
-						sector_area = area
+						if (sector.position.x <= x && x < sector.position.x + sector.size.x) &&
+							(sector.position.y <= y && y < sector.position.y + sector.size.y)
+						{
+							area := sector.size.x*sector.size.y
+							if area < sector_area {
+								sector_index = sector.handle.index
+								sector_area = area
+							}
+						}
 					}
 				}
 			}
