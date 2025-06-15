@@ -440,8 +440,7 @@ _draw_2d_view :: proc(alpha: f32) {
 		GFX_draw_2d_rect_line(&_ctx.ren2d, rect, {255, 255, 255, 200}, 2.0)
 
 		if _ctx.hovering_sector_handle == sector.handle {
-			min_chunk_coord := _get_chunk_coord(sector.position)
-			max_chunk_coord := _get_chunk_coord(sector.position + sector.size - 1) + 1
+			min_chunk_coord, max_chunk_coord := _get_chunk_coord_range(sector.position, sector.size)
 			for y in min_chunk_coord.y..<max_chunk_coord.y {
 				for x in min_chunk_coord.x..<max_chunk_coord.x {
 					GFX_draw_2d_rect_line(
@@ -682,6 +681,21 @@ _get_chunk_coord :: proc(position: [2]int) -> [2]int {
 }
 
 @(private="file")
+_get_chunk_coord_range :: proc(position, size: [2]int) -> (min, max: [2]int) {
+	min = _get_chunk_coord(position)
+
+	max_coord := position + size
+	if max_coord.x >= 0 {
+		max_coord.x -= 1
+	}
+	if max_coord.y >= 0 {
+		max_coord.y -= 1
+	}
+	max = _get_chunk_coord(max_coord) + 1
+	return
+}
+
+@(private="file")
 _append_sector :: proc(position, size: [2]int, floor_y, ceiling_y: f32) {
 	sector := _Sector{
 		position = position,
@@ -705,8 +719,7 @@ _append_sector :: proc(position, size: [2]int, floor_y, ceiling_y: f32) {
 		append(&_ctx.level.sectors, sector)
 	}
 
-	min_chunk_coord := _get_chunk_coord(position)
-	max_chunk_coord := _get_chunk_coord(position + size - 1) + 1
+	min_chunk_coord, max_chunk_coord := _get_chunk_coord_range(position, size)
 	for y in min_chunk_coord.y..<max_chunk_coord.y {
 		for x in min_chunk_coord.x..<max_chunk_coord.x {
 			if ([2]int{x, y}) not_in _ctx.level.chunks {
@@ -737,8 +750,7 @@ _delete_sector :: proc(handle: _Sector_Handle) {
 		delete(sector.linked_sectors)
 		append(&_ctx.level.free_sector_slots, handle)
 
-		min_chunk_coord := _get_chunk_coord(sector.position)
-		max_chunk_coord := _get_chunk_coord(sector.position + sector.size - 1) + 1
+		min_chunk_coord, max_chunk_coord := _get_chunk_coord_range(sector.position, sector.size)
 		for y in min_chunk_coord.y..<max_chunk_coord.y {
 			for x in min_chunk_coord.x..<max_chunk_coord.x {
 				if chunk, chunk_ok := &_ctx.level.chunks[{x, y}]; chunk_ok {
