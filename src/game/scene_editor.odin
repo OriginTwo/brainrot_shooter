@@ -439,7 +439,8 @@ _draw_2d_view :: proc(alpha: f32) {
 		GFX_set_2d_layer(&_ctx.ren2d, 0)
 		GFX_draw_2d_rect_line(&_ctx.ren2d, rect, {255, 255, 255, 200}, 2.0)
 
-		if _ctx.hovering_sector_handle == sector.handle {
+		// highlight sector's chunk(s)
+		if _ctx.hovering_sector_handle == sector.handle || _ctx.selected_sector_handle == sector.handle {
 			min_chunk_coord, max_chunk_coord := _get_chunk_coord_range(sector.position, sector.size)
 			for y in min_chunk_coord.y..<max_chunk_coord.y {
 				for x in min_chunk_coord.x..<max_chunk_coord.x {
@@ -510,61 +511,113 @@ _do_2d_view_ui :: proc() {
 		im.Begin("SELECTED SECTOR", &_ctx.selected_sector_window_open)
 		im.Text("ID: %d, GEN: %d", _ctx.selected_sector_handle.index, _ctx.selected_sector_handle.generation)
 		{
+			update_pos_size := false
+
 			SPACING :: 4.0
 			x := i32(selected_sector.position.x)
-			im.Text("POS_X:"); im.SameLine()
+			im.Text("POS_X:")
+			im.SameLine()
 			im.SetNextItemWidth(50.0)
-			im.DragInt("###SELECTED_SECTOR_POS_X", &x); im.SameLine(spacing = SPACING)
-			if im.Button("-###SELECTED_SECTOR_POS_X_DECREMENT") {x -= 1} im.SameLine(spacing = SPACING)
-			if im.Button("+###SELECTED_SECTOR_POS_X_INCREMENT") {x += 1}
-			selected_sector.position.x = int(x)
+			update_pos_size ||= im.DragInt("###SELECTED_SECTOR_POS_X", &x)
+			im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_POS_X_DECREMENT") {
+				update_pos_size = true
+				x -= 1
+			}
+			im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_POS_X_INCREMENT") {
+				update_pos_size = true
+				x += 1
+			}
 
 			y := i32(selected_sector.position.y)
-			im.Text("POS_Y:"); im.SameLine()
+			im.Text("POS_Y:")
+			im.SameLine()
 			im.SetNextItemWidth(50.0)
-			im.DragInt("###SELECTED_SECTOR_POS_Y", &y); im.SameLine(spacing = SPACING)
-			if im.Button("-###SELECTED_SECTOR_POS_Y_DECREMENT") {y -= 1} im.SameLine(spacing = SPACING)
-			if im.Button("+###SELECTED_SECTOR_POS_Y_INCREMENT") {y += 1}
-			selected_sector.position.y = int(y)
+			update_pos_size ||= im.DragInt("###SELECTED_SECTOR_POS_Y", &y)
+			im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_POS_Y_DECREMENT") {
+				update_pos_size = true
+				y -= 1
+			}
+			im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_POS_Y_INCREMENT") {
+				update_pos_size = true
+				y += 1
+			}
 
 			width := i32(selected_sector.size.x)
-			im.Text("WIDTH:"); im.SameLine()
+			im.Text("WIDTH:")
+			im.SameLine()
 			im.SetNextItemWidth(50.0)
-			im.DragInt("###SELECTED_SECTOR_WIDTH", &width, v_min = 1, v_max = _MAX_SECTOR_GRID_COORD); im.SameLine(spacing = SPACING)
-			if im.Button("-###SELECTED_SECTOR_WIDTH_DECREMENT") && width > 1                       {width -= 1} im.SameLine(spacing = SPACING)
-			if im.Button("+###SELECTED_SECTOR_WIDTH_INCREMENT") && width < _MAX_SECTOR_GRID_COORD - 1 {width += 1}
-			selected_sector.size.x = int(width)
+			update_pos_size ||= im.DragInt("###SELECTED_SECTOR_WIDTH", &width, v_min = 1, v_max = _MAX_SECTOR_GRID_COORD)
+			im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_WIDTH_DECREMENT") && width > 1 {
+				update_pos_size = true
+				width -= 1
+			}
+			im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_WIDTH_INCREMENT") && width < _MAX_SECTOR_GRID_COORD - 1 {
+				update_pos_size = true
+				width += 1
+			}
 
 			height := i32(selected_sector.size.y)
-			im.Text("HEIGHT:"); im.SameLine()
+			im.Text("HEIGHT:")
+			im.SameLine()
 			im.SetNextItemWidth(50.0)
-			im.DragInt("###SELECTED_SECTOR_HEIGHT", &height, v_min = 1, v_max = _MAX_SECTOR_GRID_COORD); im.SameLine(spacing = SPACING)
-			if im.Button("-###SELECTED_SECTOR_HEIGHT_DECREMENT") && height > 1                       {height -= 1} im.SameLine(spacing = SPACING)
-			if im.Button("+###SELECTED_SECTOR_HEIGHT_INCREMENT") && height < _MAX_SECTOR_GRID_COORD - 1 {height += 1}
-			selected_sector.size.y = int(height)
+			update_pos_size ||= im.DragInt("###SELECTED_SECTOR_HEIGHT", &height, v_min = 1, v_max = _MAX_SECTOR_GRID_COORD)
+			im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_HEIGHT_DECREMENT") && height > 1 {
+				update_pos_size = true
+				height -= 1
+			}
+			im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_HEIGHT_INCREMENT") && height < _MAX_SECTOR_GRID_COORD - 1 {
+				update_pos_size = true
+				height += 1
+			}
 
 			floor_and_ceiling_increment := f32(_UNIT_PER_GRID/2.0)
 
 			floor_y_max := selected_sector.ceiling_y - floor_and_ceiling_increment
-			im.Text("FLOOR_Y:"); im.SameLine()
+			im.Text("FLOOR_Y:")
+			im.SameLine()
 			im.SetNextItemWidth(80.0)
-			im.DragFloat("###SELECTED_SECTOR_FLOOR_Y", &selected_sector.floor_y, floor_and_ceiling_increment, -1000.0, floor_y_max); im.SameLine(spacing = SPACING)
-			if im.Button("-###SELECTED_SECTOR_FLOOR_Y_DECREMENT") {selected_sector.floor_y -= floor_and_ceiling_increment} im.SameLine(spacing = SPACING)
-			if im.Button("+###SELECTED_SECTOR_FLOOR_Y_INCREMENT") {selected_sector.floor_y += floor_and_ceiling_increment}
+			im.DragFloat("###SELECTED_SECTOR_FLOOR_Y", &selected_sector.floor_y, floor_and_ceiling_increment, -1000.0, floor_y_max)
+			im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_FLOOR_Y_DECREMENT") {
+				selected_sector.floor_y -= floor_and_ceiling_increment
+			}
+			im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_FLOOR_Y_INCREMENT") {
+				selected_sector.floor_y += floor_and_ceiling_increment
+			}
 			selected_sector.floor_y = min(selected_sector.floor_y, floor_y_max)
 
 			ceiling_y_min := selected_sector.floor_y + floor_and_ceiling_increment
-			im.Text("CEILING_Y:"); im.SameLine()
+			im.Text("CEILING_Y:")
+			im.SameLine()
 			im.SetNextItemWidth(80.0)
-			im.DragFloat("###SELECTED_SECTOR_CEILING_Y", &selected_sector.ceiling_y, floor_and_ceiling_increment, ceiling_y_min, 1000.0); im.SameLine(spacing = SPACING)
-			if im.Button("-###SELECTED_SECTOR_CEILING_Y_DECREMENT") {selected_sector.ceiling_y -= floor_and_ceiling_increment} im.SameLine(spacing = SPACING)
-			if im.Button("+###SELECTED_SECTOR_CEILING_Y_INCREMENT") {selected_sector.ceiling_y += floor_and_ceiling_increment}
+			im.DragFloat("###SELECTED_SECTOR_CEILING_Y", &selected_sector.ceiling_y, floor_and_ceiling_increment, ceiling_y_min, 1000.0)
+			im.SameLine(spacing = SPACING)
+			if im.Button("-###SELECTED_SECTOR_CEILING_Y_DECREMENT") {
+				selected_sector.ceiling_y -= floor_and_ceiling_increment
+			}
+			im.SameLine(spacing = SPACING)
+			if im.Button("+###SELECTED_SECTOR_CEILING_Y_INCREMENT") {
+				selected_sector.ceiling_y += floor_and_ceiling_increment
+			}
 			selected_sector.ceiling_y = max(selected_sector.ceiling_y, ceiling_y_min)
 
 			if im.Button("DELETE") {
 				_delete_sector(_ctx.selected_sector_handle)
 				_ctx.selected_sector_handle = _INVALID_SECTOR_HANDLE
 				_ctx.selected_sector_window_open = false
+			}
+
+			if update_pos_size {
+				_change_sector_position_and_size(selected_sector, {int(x), int(y)}, {int(width), int(height)})
 			}
 		}
 		im.End()
@@ -696,6 +749,29 @@ _get_chunk_coord_range :: proc(position, size: [2]int) -> (min, max: [2]int) {
 }
 
 @(private="file")
+_append_sector_to_chunk :: proc(chunk_coord: [2]int, handle: _Sector_Handle) {
+	if chunk_coord not_in _ctx.level.chunks {
+		_ctx.level.chunks[chunk_coord] = make([dynamic]_Sector_Handle, 0, 8)
+	}
+	append(&_ctx.level.chunks[chunk_coord], handle)
+}
+
+@(private="file")
+_remove_sector_from_chunk :: proc(chunk_coord: [2]int, handle: _Sector_Handle) {
+	chunk, chunk_ok := &_ctx.level.chunks[chunk_coord]
+	if !chunk_ok {
+		return
+	}
+
+	for chunk_sector_handle, i in chunk {
+		if chunk_sector_handle == handle {
+			unordered_remove(chunk, i)
+			break
+		}
+	}
+}
+
+@(private="file")
 _append_sector :: proc(position, size: [2]int, floor_y, ceiling_y: f32) {
 	sector := _Sector{
 		position = position,
@@ -722,10 +798,7 @@ _append_sector :: proc(position, size: [2]int, floor_y, ceiling_y: f32) {
 	min_chunk_coord, max_chunk_coord := _get_chunk_coord_range(position, size)
 	for y in min_chunk_coord.y..<max_chunk_coord.y {
 		for x in min_chunk_coord.x..<max_chunk_coord.x {
-			if ([2]int{x, y}) not_in _ctx.level.chunks {
-				_ctx.level.chunks[{x, y}] = make([dynamic]_Sector_Handle, 0, 8)
-			}
-			append(&_ctx.level.chunks[{x, y}], sector.handle)
+			_append_sector_to_chunk({x, y}, sector.handle)
 		}
 	}
 }
@@ -753,15 +826,28 @@ _delete_sector :: proc(handle: _Sector_Handle) {
 		min_chunk_coord, max_chunk_coord := _get_chunk_coord_range(sector.position, sector.size)
 		for y in min_chunk_coord.y..<max_chunk_coord.y {
 			for x in min_chunk_coord.x..<max_chunk_coord.x {
-				if chunk, chunk_ok := &_ctx.level.chunks[{x, y}]; chunk_ok {
-					for chunk_sector_handle, i in chunk {
-						if chunk_sector_handle == sector.handle {
-							unordered_remove(chunk, i)
-							break
-						}
-					}
-				}
+				_remove_sector_from_chunk({x, y}, sector.handle)
 			}
+		}
+	}
+}
+
+@(private="file")
+_change_sector_position_and_size :: proc(sector: ^_Sector, new_position, new_size: [2]int) {
+	min_chunk_coord, max_chunk_coord := _get_chunk_coord_range(sector.position, sector.size)
+	for y in min_chunk_coord.y..<max_chunk_coord.y {
+		for x in min_chunk_coord.x..<max_chunk_coord.x {
+			_remove_sector_from_chunk({x, y}, sector.handle)
+		}
+	}
+
+	sector.position = new_position
+	sector.size = new_size
+
+	min_chunk_coord, max_chunk_coord = _get_chunk_coord_range(sector.position, sector.size)
+	for y in min_chunk_coord.y..<max_chunk_coord.y {
+		for x in min_chunk_coord.x..<max_chunk_coord.x {
+			_append_sector_to_chunk({x, y}, sector.handle)
 		}
 	}
 }
