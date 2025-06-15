@@ -25,7 +25,7 @@ WND_create :: proc(
 
 	sdl.GL_SetAttribute(.CONTEXT_PROFILE_MASK, i32(sdl.GL_CONTEXT_PROFILE_CORE))
 	sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, 4)
-	sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, 3)
+	sdl.GL_SetAttribute(.CONTEXT_MINOR_VERSION, 3)
 	WND__ctx.gl_ctx = sdl.GL_CreateContext(WND__ctx.window)
 	if WND__ctx.gl_ctx == nil {
 		log.fatalf("WND: failed to create opengl context: %s", sdl.GetError())
