@@ -208,6 +208,45 @@ GFX_replace_image_color :: proc(img: GFX_Image, old, new: M_Color) {
 
 
 ///////////////////////////////////////////////////////////
+// TEXTURE
+///////////////////////////////////////////////////////////
+GFX_Texture :: struct {
+	texture: sg.Image,
+	sampler: sg.Sampler,
+}
+
+GFX_load_texture_from_image :: proc(tex: ^GFX_Texture, img: GFX_Image) {
+	tex.texture = sg.make_image({
+		type = ._2D,
+		width = i32(img.width),
+		height = i32(img.height),
+		num_slices = 1,
+		num_mipmaps = 1,
+		usage = .IMMUTABLE,
+		pixel_format = .RGBA8,
+		sample_count = 1,
+		data = {subimage = {0 = {0 = {
+			ptr = raw_data(img.pixels),
+			size = len(img.pixels)*size_of(img.pixels[0]),
+		}}}},
+	})
+	tex.sampler = sg.make_sampler({
+		min_filter = .NEAREST,
+		mag_filter = .NEAREST,
+		mipmap_filter = .NEAREST,
+		wrap_u = .CLAMP_TO_EDGE,
+		wrap_v = .CLAMP_TO_EDGE,
+	})
+}
+
+GFX_unload_texture :: proc(tex: ^GFX_Texture) {
+	sg.destroy_image(tex.texture)
+	sg.destroy_sampler(tex.sampler)
+	tex^ = {}
+}
+
+
+///////////////////////////////////////////////////////////
 // FONT
 ///////////////////////////////////////////////////////////
 GFX_Font_Glyph_Info :: struct {
@@ -219,8 +258,7 @@ GFX_Font_Glyph_Info :: struct {
 GFX_Font :: struct {
 	base_size: int,
 	glyph_count: int,
-	texture: sg.Image,
-	sampler: sg.Sampler,
+	texture: GFX_Texture,
 	sources: []M_Rect,
 	glyphs: []GFX_Font_Glyph_Info,
 }
@@ -233,27 +271,7 @@ GFX_load_font_from_image :: proc(font: ^GFX_Font, image: GFX_Image) {
 		img_copy: GFX_Image
 		GFX_clone_image(&img_copy, image)
 		GFX_replace_image_color(img_copy, M_COLOR_MAGENTA, M_COLOR_BLANK)
-		font.texture = sg.make_image({
-			type = ._2D,
-			width = i32(img_copy.width),
-			height = i32(img_copy.height),
-			num_slices = 1,
-			num_mipmaps = 1,
-			usage = .IMMUTABLE,
-			pixel_format = .RGBA8,
-			sample_count = 1,
-			data = {subimage = {0 = {0 = {
-				ptr = raw_data(img_copy.pixels),
-				size = len(img_copy.pixels)*size_of(img_copy.pixels[0]),
-			}}}},
-		})
-		font.sampler = sg.make_sampler({
-			min_filter = .NEAREST,
-			mag_filter = .NEAREST,
-			mipmap_filter = .NEAREST,
-			wrap_u = .CLAMP_TO_EDGE,
-			wrap_v = .CLAMP_TO_EDGE,
-		})
+		GFX_load_texture_from_image(&font.texture, img_copy)
 		GFX_unload_image(&img_copy)
 	}
 
@@ -297,8 +315,7 @@ GFX_load_font_from_image :: proc(font: ^GFX_Font, image: GFX_Image) {
 }
 
 GFX_unload_font :: proc(font: ^GFX_Font) {
-	sg.destroy_sampler(font.sampler)
-	sg.destroy_image(font.texture)
+	GFX_unload_texture(&font.texture)
 	delete(font.sources)
 	delete(font.glyphs)
 	font^ = {}
@@ -726,19 +743,18 @@ GFX_draw_2d_rect_line :: proc(
 
 GFX_draw_2d_texture :: proc(
 	ren: ^GFX_2D_Renderer,
-	texture: sg.Image,
-	sampler: sg.Sampler,
+	texture: GFX_Texture,
 	source: M_Rect,
 	dest: M_Rect,
 	tint: M_Color,
 ) {
-	GFX__new_2d_batch_if_needed(ren, texture, sampler)
+	GFX__new_2d_batch_if_needed(ren, texture.texture, texture.sampler)
 
 	col := M_frgba_from_urgba(tint)
 	start_index := GFX__2D_Index(ren.num_vertices)
 
-	tex_width := f32(sg.query_image_width(texture))
-	tex_height := f32(sg.query_image_height(texture))
+	tex_width := f32(sg.query_image_width(texture.texture))
+	tex_height := f32(sg.query_image_height(texture.texture))
 
 	src_min := M_Vec2f32{
 		source.x/tex_width,
@@ -801,7 +817,7 @@ GFX_draw_2d_string :: proc(
 			src.height*scale,
 		}
 
-		GFX_draw_2d_texture(ren, font.texture, font.sampler, src, dst, color)
+		GFX_draw_2d_texture(ren, font.texture, src, dst, color)
 		x += info.advance_x*scale
 	}
 }
@@ -1931,8 +1947,7 @@ GFX_draw_post_fx :: proc(
 	h := f32(sg.query_image_height(ren_fx.bloom_compose_texture))
 	GFX_draw_2d_texture(
 		ren2d,
-		ren_fx.bloom_compose_texture,
-		GFX_get_default_2d_sampler(ren2d^),
+		{ren_fx.bloom_compose_texture, GFX_get_default_2d_sampler(ren2d^)},
 		{0.0, h, w, -h},
 		{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
 		M_COLOR_WHITE,

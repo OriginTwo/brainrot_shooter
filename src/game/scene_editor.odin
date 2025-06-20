@@ -65,6 +65,12 @@ _ctx: struct {
 
 	mouse_pressed_grid: [2]int,
 
+	next_floor_y: f32,
+	next_ceiling_y: f32,
+	next_floor_texture_id: LVL_Texture_ID,
+	next_ceiling_texture_id: LVL_Texture_ID,
+	next_walls_texture_id: LVL_Texture_ID,
+
 	hovering_sector_handle: _Sector_Handle,
 	selected_sector_handle: _Sector_Handle,
 	selected_sector_window_open: bool,
@@ -90,6 +96,12 @@ scn_editor_init :: proc() {
 
 	_ctx.mouse_pressed_grid = _INVALID_GRID_COORD
 
+	_ctx.next_floor_y = 0.0
+	_ctx.next_ceiling_y = 3.0
+	_ctx.next_floor_texture_id = .No_Tex
+	_ctx.next_ceiling_texture_id = .No_Tex
+	_ctx.next_walls_texture_id = .No_Tex
+
 	_ctx.hovering_sector_handle = _INVALID_SECTOR_HANDLE
 	_ctx.selected_sector_handle = _INVALID_SECTOR_HANDLE
 	_ctx.linking_sector1_handle = _INVALID_SECTOR_HANDLE
@@ -100,6 +112,8 @@ scn_editor_init :: proc() {
 		sdl.GetWindowSize(WND_get_handle(), &win_size.x, &win_size.y)
 		_ctx.offset_2d = -{f32(win_size.x), f32(win_size.y)}/2.0
 	}
+
+	LVL_load_texture(&_ctx.level_preview)
 }
 
 scn_editor_uninit :: proc() {
@@ -143,6 +157,8 @@ scn_editor_tick :: proc(input: INP_State, delta: f32) {
 }
 
 scn_editor_draw :: proc(alpha: f32) {
+	SPACING :: 4.0
+
 	GFX_begin_frame()
 	GFX_clear_background(M_FCOLOR_BLACK)
 
@@ -164,6 +180,95 @@ scn_editor_draw :: proc(alpha: f32) {
 	im.SetNextWindowSize({200.0, 300.0}, .FirstUseEver)
 	im.Begin("MAIN")
 	im.Checkbox("3D_VIEW", &_ctx.is_3d_view)
+
+	{
+		floor_y_max := _ctx.next_ceiling_y - _FLOOR_AND_CEILING_Y_INCREMENT
+		im.Text("NEXT_FLOOR_Y:")
+		im.SameLine()
+		im.SetNextItemWidth(80.0)
+		im.DragFloat("###NEXT_SECTOR_FLOOR_Y", &_ctx.next_floor_y, _FLOOR_AND_CEILING_Y_INCREMENT, -1000.0, floor_y_max)
+		im.SameLine(spacing = SPACING)
+		if im.Button("-###NEXT_SECTOR_FLOOR_Y_DECREMENT") {
+			_ctx.next_floor_y -= _FLOOR_AND_CEILING_Y_INCREMENT
+		}
+		im.SameLine(spacing = SPACING)
+		if im.Button("+###NEXT_SECTOR_FLOOR_Y_INCREMENT") {
+			_ctx.next_floor_y += _FLOOR_AND_CEILING_Y_INCREMENT
+		}
+		_ctx.next_floor_y = min(_ctx.next_floor_y, floor_y_max)
+
+		ceiling_y_min := _ctx.next_floor_y + _FLOOR_AND_CEILING_Y_INCREMENT
+		im.Text("CEILING_Y:")
+		im.SameLine()
+		im.SetNextItemWidth(80.0)
+		im.DragFloat("###NEXT_SECTOR_CEILING_Y", &_ctx.next_ceiling_y, _FLOOR_AND_CEILING_Y_INCREMENT, ceiling_y_min, 1000.0)
+		im.SameLine(spacing = SPACING)
+		if im.Button("-###NEXT_SECTOR_CEILING_Y_DECREMENT") {
+			_ctx.next_ceiling_y -= _FLOOR_AND_CEILING_Y_INCREMENT
+		}
+		im.SameLine(spacing = SPACING)
+		if im.Button("+###NEXT_SECTOR_CEILING_Y_INCREMENT") {
+			_ctx.next_ceiling_y += _FLOOR_AND_CEILING_Y_INCREMENT
+		}
+		_ctx.next_ceiling_y = max(_ctx.next_ceiling_y, ceiling_y_min)
+	}
+
+	{
+		level_texture_atlas := u64(sg.gl_query_image_info(_ctx.level_preview.texture.texture).tex[0])
+		level_texture_atlas_size := M_Vec2f32{
+			f32(sg.query_image_width(_ctx.level_preview.texture.texture)),
+			f32(sg.query_image_height(_ctx.level_preview.texture.texture)),
+		}
+
+		floor_tex_src := LVL_TEXTURE_SOURCES[_ctx.next_floor_texture_id]
+		im.Image(
+			level_texture_atlas,
+			{32.0, 32.0},
+			{floor_tex_src.x, floor_tex_src.y}/level_texture_atlas_size,
+			{floor_tex_src.x + floor_tex_src.width, floor_tex_src.y + floor_tex_src.height}/level_texture_atlas_size,
+		)
+		im.SameLine(spacing = SPACING)
+		if im.Button("FLOOR_TEXTURE###SELECTED_SECTOR_FLOOR_TEXTURE_SELECT") {
+			im.OpenPopup("FLOOR_TEXTURE_SELECT_POPUP")
+		}
+		floor_texture_id := _do_texture_select_popup("FLOOR", level_texture_atlas, level_texture_atlas_size)
+		if floor_texture_id != .Nil {
+			_ctx.next_floor_texture_id = floor_texture_id
+		}
+
+		ceiling_tex_src := LVL_TEXTURE_SOURCES[_ctx.next_ceiling_texture_id]
+		im.Image(
+			level_texture_atlas,
+			{32.0, 32.0},
+			{ceiling_tex_src.x, ceiling_tex_src.y}/level_texture_atlas_size,
+			{ceiling_tex_src.x + ceiling_tex_src.width, ceiling_tex_src.y + ceiling_tex_src.height}/level_texture_atlas_size,
+		)
+		im.SameLine(spacing = SPACING)
+		if im.Button("CEILING_TEXTURE###SELECTED_SECTOR_CEILING_TEXTURE_SELECT") {
+			im.OpenPopup("CEILING_TEXTURE_SELECT_POPUP")
+		}
+		ceiling_texture_id := _do_texture_select_popup("CEILING", level_texture_atlas, level_texture_atlas_size)
+		if ceiling_texture_id != .Nil {
+			_ctx.next_ceiling_texture_id = ceiling_texture_id
+		}
+
+		walls_tex_src := LVL_TEXTURE_SOURCES[_ctx.next_walls_texture_id]
+		im.Image(
+			level_texture_atlas,
+			{32.0, 32.0},
+			{walls_tex_src.x, walls_tex_src.y}/level_texture_atlas_size,
+			{walls_tex_src.x + walls_tex_src.width, walls_tex_src.y + walls_tex_src.height}/level_texture_atlas_size,
+		)
+		im.SameLine(spacing = SPACING)
+		if im.Button("WALLS_TEXTURE###SELECTED_SECTOR_WALLS_TEXTURE_SELECT") {
+			im.OpenPopup("WALLS_TEXTURE_SELECT_POPUP")
+		}
+		walls_texture_id := _do_texture_select_popup("WALLS", level_texture_atlas, level_texture_atlas_size)
+		if walls_texture_id != .Nil {
+			_ctx.next_walls_texture_id = walls_texture_id
+		}
+	}
+
 	im.End()
 
 	GFX_end_frame()
@@ -175,13 +280,12 @@ scn_editor_draw :: proc(alpha: f32) {
 
 @(private="file") _GRID_PER_CHUNK :: 16
 @(private="file") _UNIT_PER_GRID :: 0.5
+@(private="file") _FLOOR_AND_CEILING_Y_INCREMENT :: _UNIT_PER_GRID/2.0
 @(private="file") _MAX_SECTOR_GRID_COORD :: 65535
 @(private="file") _INVALID_GRID_COORD :: [2]int{_MAX_SECTOR_GRID_COORD, _MAX_SECTOR_GRID_COORD}
 @(private="file") _2D_GRID_SIZE :: 24
 @(private="file") _2D_GRID_POINT_SIZE :: 4
 @(private="file") _2D_CAM_SPEED :: 400.0
-@(private="file") _DEFAULT_FLOOR_Y :: 0.0
-@(private="file") _DEFAULT_CEILING_Y :: 3.0
 @(private="file") _MAIN_UI_WINDOW_POSITION :: M_Vec2f32{20.0, 20.0}
 @(private="file") _UI_WINDOW_OPEN_OFFSET :: M_Vec2f32{30.0, 30.0}
 
@@ -269,8 +373,6 @@ _tick_2d_view :: proc(input: INP_State, delta: f32) {
 			_append_sector(
 				minimum,
 				maximum - minimum,
-				_DEFAULT_FLOOR_Y,
-				_DEFAULT_CEILING_Y,
 			)
 
 			_ctx.is_placing_sector = false
@@ -578,39 +680,99 @@ _do_2d_view_ui :: proc() {
 				height += 1
 			}
 
-			floor_and_ceiling_increment := f32(_UNIT_PER_GRID/2.0)
-
-			floor_y_max := selected_sector.ceiling_y - floor_and_ceiling_increment
+			floor_y_max := selected_sector.ceiling_y - _FLOOR_AND_CEILING_Y_INCREMENT
 			im.Text("FLOOR_Y:")
 			im.SameLine()
 			im.SetNextItemWidth(80.0)
-			im.DragFloat("###SELECTED_SECTOR_FLOOR_Y", &selected_sector.floor_y, floor_and_ceiling_increment, -1000.0, floor_y_max)
+			im.DragFloat("###SELECTED_SECTOR_FLOOR_Y", &selected_sector.floor_y, _FLOOR_AND_CEILING_Y_INCREMENT, -1000.0, floor_y_max)
 			im.SameLine(spacing = SPACING)
 			if im.Button("-###SELECTED_SECTOR_FLOOR_Y_DECREMENT") {
-				selected_sector.floor_y -= floor_and_ceiling_increment
+				selected_sector.floor_y -= _FLOOR_AND_CEILING_Y_INCREMENT
 			}
 			im.SameLine(spacing = SPACING)
 			if im.Button("+###SELECTED_SECTOR_FLOOR_Y_INCREMENT") {
-				selected_sector.floor_y += floor_and_ceiling_increment
+				selected_sector.floor_y += _FLOOR_AND_CEILING_Y_INCREMENT
 			}
 			selected_sector.floor_y = min(selected_sector.floor_y, floor_y_max)
 
-			ceiling_y_min := selected_sector.floor_y + floor_and_ceiling_increment
+			ceiling_y_min := selected_sector.floor_y + _FLOOR_AND_CEILING_Y_INCREMENT
 			im.Text("CEILING_Y:")
 			im.SameLine()
 			im.SetNextItemWidth(80.0)
-			im.DragFloat("###SELECTED_SECTOR_CEILING_Y", &selected_sector.ceiling_y, floor_and_ceiling_increment, ceiling_y_min, 1000.0)
+			im.DragFloat("###SELECTED_SECTOR_CEILING_Y", &selected_sector.ceiling_y, _FLOOR_AND_CEILING_Y_INCREMENT, ceiling_y_min, 1000.0)
 			im.SameLine(spacing = SPACING)
 			if im.Button("-###SELECTED_SECTOR_CEILING_Y_DECREMENT") {
-				selected_sector.ceiling_y -= floor_and_ceiling_increment
+				selected_sector.ceiling_y -= _FLOOR_AND_CEILING_Y_INCREMENT
 			}
 			im.SameLine(spacing = SPACING)
 			if im.Button("+###SELECTED_SECTOR_CEILING_Y_INCREMENT") {
-				selected_sector.ceiling_y += floor_and_ceiling_increment
+				selected_sector.ceiling_y += _FLOOR_AND_CEILING_Y_INCREMENT
 			}
 			selected_sector.ceiling_y = max(selected_sector.ceiling_y, ceiling_y_min)
 
-			if im.Button("DELETE") {
+			if im.Button("COPY_FLOOR_Y###COPY_SELECTED_SECTOR_FLOOR_Y") {
+				_ctx.next_floor_y = selected_sector.floor_y
+			}
+			im.SameLine(spacing = SPACING)
+			if im.Button("COPY_CEILING_Y###COPY_SELECTED_SECTOR_CEILING_Y") {
+				_ctx.next_ceiling_y = selected_sector.ceiling_y
+			}
+
+			level_texture_atlas := u64(sg.gl_query_image_info(_ctx.level_preview.texture.texture).tex[0])
+			level_texture_atlas_size := M_Vec2f32{
+				f32(sg.query_image_width(_ctx.level_preview.texture.texture)),
+				f32(sg.query_image_height(_ctx.level_preview.texture.texture)),
+			}
+
+			floor_tex_src := LVL_TEXTURE_SOURCES[selected_sector.floor_texture_id]
+			im.Image(
+				level_texture_atlas,
+				{32.0, 32.0},
+				{floor_tex_src.x, floor_tex_src.y}/level_texture_atlas_size,
+				{floor_tex_src.x + floor_tex_src.width, floor_tex_src.y + floor_tex_src.height}/level_texture_atlas_size,
+			)
+			im.SameLine(spacing = SPACING)
+			if im.Button("FLOOR_TEXTURE###SELECTED_SECTOR_FLOOR_TEXTURE_SELECT") {
+				im.OpenPopup("FLOOR_TEXTURE_SELECT_POPUP")
+			}
+			floor_texture_id := _do_texture_select_popup("FLOOR", level_texture_atlas, level_texture_atlas_size)
+			if floor_texture_id != .Nil {
+				selected_sector.floor_texture_id = floor_texture_id
+			}
+
+			ceiling_tex_src := LVL_TEXTURE_SOURCES[selected_sector.ceiling_texture_id]
+			im.Image(
+				level_texture_atlas,
+				{32.0, 32.0},
+				{ceiling_tex_src.x, ceiling_tex_src.y}/level_texture_atlas_size,
+				{ceiling_tex_src.x + ceiling_tex_src.width, ceiling_tex_src.y + ceiling_tex_src.height}/level_texture_atlas_size,
+			)
+			im.SameLine(spacing = SPACING)
+			if im.Button("CEILING_TEXTURE###SELECTED_SECTOR_CEILING_TEXTURE_SELECT") {
+				im.OpenPopup("CEILING_TEXTURE_SELECT_POPUP")
+			}
+			ceiling_texture_id := _do_texture_select_popup("CEILING", level_texture_atlas, level_texture_atlas_size)
+			if ceiling_texture_id != .Nil {
+				selected_sector.ceiling_texture_id = ceiling_texture_id
+			}
+
+			walls_tex_src := LVL_TEXTURE_SOURCES[selected_sector.walls_texture_id]
+			im.Image(
+				level_texture_atlas,
+				{32.0, 32.0},
+				{walls_tex_src.x, walls_tex_src.y}/level_texture_atlas_size,
+				{walls_tex_src.x + walls_tex_src.width, walls_tex_src.y + walls_tex_src.height}/level_texture_atlas_size,
+			)
+			im.SameLine(spacing = SPACING)
+			if im.Button("WALLS_TEXTURE###SELECTED_SECTOR_WALLS_TEXTURE_SELECT") {
+				im.OpenPopup("WALLS_TEXTURE_SELECT_POPUP")
+			}
+			walls_texture_id := _do_texture_select_popup("WALLS", level_texture_atlas, level_texture_atlas_size)
+			if walls_texture_id != .Nil {
+				selected_sector.walls_texture_id = walls_texture_id
+			}
+
+			if im.Button("DELETE###DELETE_SELECTED_SECTOR") {
 				_delete_sector(_ctx.selected_sector_handle)
 				_ctx.selected_sector_handle = _INVALID_SECTOR_HANDLE
 				_ctx.selected_sector_window_open = false
@@ -711,6 +873,9 @@ _Sector :: struct {
 	size: [2]int,
 	floor_y: f32,
 	ceiling_y: f32,
+	floor_texture_id: LVL_Texture_ID,
+	ceiling_texture_id: LVL_Texture_ID,
+	walls_texture_id: LVL_Texture_ID,
 	linked_sectors: [dynamic]_Sector_Handle,
 }
 
@@ -772,12 +937,15 @@ _remove_sector_from_chunk :: proc(chunk_coord: [2]int, handle: _Sector_Handle) {
 }
 
 @(private="file")
-_append_sector :: proc(position, size: [2]int, floor_y, ceiling_y: f32) {
+_append_sector :: proc(position, size: [2]int) {
 	sector := _Sector{
 		position = position,
 		size = size,
-		floor_y = floor_y,
-		ceiling_y = ceiling_y,
+		floor_y = _ctx.next_floor_y,
+		ceiling_y = _ctx.next_ceiling_y,
+		floor_texture_id = _ctx.next_floor_texture_id,
+		ceiling_texture_id = _ctx.next_ceiling_texture_id,
+		walls_texture_id = _ctx.next_walls_texture_id,
 	}
 
 	if len(_ctx.level.free_sector_slots) > 0 {
@@ -864,6 +1032,7 @@ _get_sector_ptr :: proc(handle: _Sector_Handle) -> (result: ^_Sector) {
 @(private="file")
 _construct_level_preview :: proc() {
 	_delete_level_preview()
+	LVL_load_texture(&_ctx.level_preview)
 
 	sectors := make([]LVL_Sector, len(_ctx.level.sectors))
 	walls := make([dynamic]LVL_Wall, 0, 32)
@@ -875,6 +1044,8 @@ _construct_level_preview :: proc() {
 			size = {f32(sector.size.x)*_UNIT_PER_GRID, f32(sector.size.y)*_UNIT_PER_GRID},
 			floor_y = sector.floor_y,
 			ceiling_y = sector.ceiling_y,
+			floor_texture_id = sector.floor_texture_id,
+			ceiling_texture_id = sector.ceiling_texture_id,
 		}
 	}
 	_ctx.level_preview.sectors = sectors
@@ -1035,11 +1206,13 @@ _construct_level_preview :: proc() {
 		if neighbor_cell.sector_index == -1 || !neighbor_linked {
 			// CASE #1 and CASE #2
 			desired_height := abs(curr_sector.ceiling_y - curr_sector.floor_y)
+			desired_texture_id := curr_sector.walls_texture_id
 
 			// extend existing wall if possible
 			if (cell_to_extend.sector_index != -1 && cell_to_extend.wall_indices[dir][0] != -1) &&
 				walls[cell_to_extend.wall_indices[dir][0]].y == curr_sector.floor_y &&
-				walls[cell_to_extend.wall_indices[dir][0]].height == desired_height
+				walls[cell_to_extend.wall_indices[dir][0]].height == desired_height &&
+				walls[cell_to_extend.wall_indices[dir][0]].texture_id == desired_texture_id
 			{
 				curr_cell.wall_indices[dir][0] = cell_to_extend.wall_indices[dir][0]
 				walls[curr_cell.wall_indices[dir][0]].p2 += wall_p2_offset
@@ -1052,16 +1225,20 @@ _construct_level_preview :: proc() {
 					facing = facing_dir,
 					y = curr_sector.floor_y,
 					height = desired_height,
+					texture_id = desired_texture_id,
 				})
 			}
 		} else if neighbor_linked && (floor_y_diff < 0.0 || ceiling_y_diff > 0.0) {
 			// CASE #3
+			desired_texture_id := curr_sector.walls_texture_id
+
 			if floor_y_diff < 0.0 {
 				desired_height := abs(floor_y_diff)
 
 				if (cell_to_extend.sector_index != -1 && cell_to_extend.wall_indices[dir][0] != -1) &&
 					walls[cell_to_extend.wall_indices[dir][0]].y == curr_sector.floor_y &&
-					walls[cell_to_extend.wall_indices[dir][0]].height == desired_height
+					walls[cell_to_extend.wall_indices[dir][0]].height == desired_height &&
+					walls[cell_to_extend.wall_indices[dir][0]].texture_id == desired_texture_id
 				{
 					curr_cell.wall_indices[dir][0] = cell_to_extend.wall_indices[dir][0]
 					walls[curr_cell.wall_indices[dir][0]].p2 += wall_p2_offset
@@ -1074,6 +1251,7 @@ _construct_level_preview :: proc() {
 						facing = facing_dir,
 						y = curr_sector.floor_y,
 						height = desired_height,
+						texture_id = desired_texture_id,
 					})
 				}
 			}
@@ -1084,7 +1262,8 @@ _construct_level_preview :: proc() {
 
 				if (cell_to_extend.sector_index != -1 && cell_to_extend.wall_indices[dir][1] != -1) &&
 					walls[cell_to_extend.wall_indices[dir][1]].y == desired_y &&
-					walls[cell_to_extend.wall_indices[dir][1]].height == desired_height
+					walls[cell_to_extend.wall_indices[dir][1]].height == desired_height &&
+					walls[cell_to_extend.wall_indices[dir][1]].texture_id == desired_texture_id
 				{
 					curr_cell.wall_indices[dir][1] = cell_to_extend.wall_indices[dir][1]
 					walls[curr_cell.wall_indices[dir][1]].p2 += wall_p2_offset
@@ -1097,6 +1276,7 @@ _construct_level_preview :: proc() {
 						facing = facing_dir,
 						y = desired_y,
 						height = desired_height,
+						texture_id = desired_texture_id,
 					})
 				}
 			}
@@ -1147,6 +1327,32 @@ _delete_level_preview :: proc() {
 	}
 
 	_ctx.level_preview = {}
+}
+
+@(private="file")
+_do_texture_select_popup :: proc(id: string, texture_id: u64, texture_size: M_Vec2f32) -> LVL_Texture_ID {
+	result: LVL_Texture_ID = .Nil
+	if im.BeginPopup(fmt.ctprintf("%s_TEXTURE_SELECT_POPUP", id)) {
+		if im.BeginTable(fmt.ctprintf("%s_TEXTURE_SELECT_POPUP_TABLE", id), 8) {
+			for id in LVL_Texture_ID {
+				source := LVL_TEXTURE_SOURCES[id]
+				if im.ImageButton(
+					fmt.ctprintf("%s", id),
+					texture_id,
+					{32.0, 32.0},
+					{source.x, source.y}/texture_size,
+					{source.x + source.width, source.y + source.height}/texture_size,
+				) {
+					result = id
+					im.CloseCurrentPopup()
+				}
+				im.TableNextColumn()
+			}
+			im.EndTable()
+		}
+		im.EndPopup()
+	}
+	return result
 }
 
 } // when DEV_BUILD

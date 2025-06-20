@@ -10,7 +10,12 @@ import im "lib:imgui"
 import sg "lib:sokol/gfx"
 
 SCN_GAME_HANDLE :: SCN_Handle(#hash("game", "fnv64a"))
-SCN_GAME_CALLBACKS :: SCN_Callbacks{scn_game_init, scn_game_uninit, scn_game_tick, scn_game_draw}
+SCN_GAME_CALLBACKS :: SCN_Callbacks{
+	scn_game_init,
+	scn_game_uninit,
+	scn_game_tick,
+	scn_game_draw,
+}
 
 @(private="file")
 _ctx: struct {
@@ -240,8 +245,7 @@ scn_game_draw :: proc(alpha: f32) {
 		h := f32(sg.query_image_height(_ctx.ren3d.color_texture))
 		GFX_draw_2d_texture(
 			&_ctx.ren2d,
-			_ctx.ren3d.color_texture,
-			GFX_get_default_2d_sampler(_ctx.ren2d),
+			{_ctx.ren3d.color_texture, GFX_get_default_2d_sampler(_ctx.ren2d)},
 			{0.0, h, w, -h},
 			{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
 			M_COLOR_WHITE,

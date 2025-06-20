@@ -52,6 +52,9 @@
 		X draw 2d view
 		X draw 3d view
 		X assign sector to chunks for optimization (for collision, editor, etc.)
+		X texture
+		- texture tiling
+		X match floor/ceiling y with another sector
 	- object
 		- place
 		- remove
