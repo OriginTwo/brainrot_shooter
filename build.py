@@ -82,7 +82,7 @@ def build_game():
 	subprocess.call([
 		"odin",
 		"build",
-		"src/game",
+		"src/game/main",
 	] + flags)
 
 
