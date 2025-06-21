@@ -45,6 +45,10 @@ def build_game():
 
 
 	print("-- Compiling shaders")
+	# make shader build directory if not exist
+	if not os.path.exists(shader_out_dir) or not os.path.isdir(shader_out_dir):
+		os.mkdir(shader_out_dir)
+
 	# clear shader build directory
 	for file in os.listdir(shader_out_dir):
 		os.remove(os.path.join(shader_out_dir, file))

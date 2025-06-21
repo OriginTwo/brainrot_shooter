@@ -1,5 +1,6 @@
 build/res/asset_registry.json
 build/resource.dat
+src/game/shader
 src/game/generated_asset_def.odin
 *.exe
 *.pdb
