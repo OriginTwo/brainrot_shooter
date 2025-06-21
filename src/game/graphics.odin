@@ -859,6 +859,8 @@ GFX_3D_Renderer :: struct {
 	vertex_normal_buffer: sg.Buffer,
 	vertex_uv_buffer: sg.Buffer,
 	vertex_color_buffer: sg.Buffer,
+	vertex_tiling_info_buffer: sg.Buffer,
+	vertex_tiling_param_buffer: sg.Buffer,
 	index_buffer: sg.Buffer,
 	shader: sg.Shader,
 	color_texture: sg.Image,
@@ -876,6 +878,8 @@ GFX_3D_Renderer :: struct {
 	vertex_normals: []M_Vec3f32,
 	vertex_uvs: []M_Vec2f32,
 	vertex_colors: []M_FColor,
+	vertex_tiling_infos: []M_Vec4f32,  // xy = tile_min_uv,  zw = tile_size [0.0..1.0]
+	vertex_tiling_params: []M_Vec4f32, // xy = local_offset, zw = repeat_amount
 
 	num_indices: u32,
 	indices: []GFX__3D_Index,
@@ -944,6 +948,18 @@ GFX_create_3d_renderer :: proc(
 			usage = .STREAM,
 		})
 
+		ren.vertex_tiling_info_buffer = sg.make_buffer({
+			size = max_vertex*size_of(M_Vec4f32),
+			type = .VERTEXBUFFER,
+			usage = .STREAM,
+		})
+
+		ren.vertex_tiling_param_buffer = sg.make_buffer({
+			size = max_vertex*size_of(M_Vec4f32),
+			type = .VERTEXBUFFER,
+			usage = .STREAM,
+		})
+
 		ren.index_buffer = sg.make_buffer({
 			size = max_index*size_of(GFX__3D_Index),
 			type = .INDEXBUFFER,
@@ -993,10 +1009,12 @@ GFX_create_3d_renderer :: proc(
 			shader = ren.shader,
 			layout = {
 				buffers = {
-					0 = {stride = size_of(M_Vec3f32)},
-					1 = {stride = size_of(M_Vec3f32)},
-					2 = {stride = size_of(M_Vec2f32)},
-					3 = {stride = size_of(M_FColor)},
+					shader.ATTR_generic_3d_generic_3d_A_position = {stride = size_of(M_Vec3f32)},
+					shader.ATTR_generic_3d_generic_3d_A_normal = {stride = size_of(M_Vec3f32)},
+					shader.ATTR_generic_3d_generic_3d_A_uv = {stride = size_of(M_Vec2f32)},
+					shader.ATTR_generic_3d_generic_3d_A_color = {stride = size_of(M_FColor)},
+					shader.ATTR_generic_3d_generic_3d_A_tiling_info = {stride = size_of(M_Vec4f32)},
+					shader.ATTR_generic_3d_generic_3d_A_tiling_param = {stride = size_of(M_Vec4f32)},
 				},
 				attrs = {
 					shader.ATTR_generic_3d_generic_3d_A_position = {
@@ -1013,6 +1031,14 @@ GFX_create_3d_renderer :: proc(
 					},
 					shader.ATTR_generic_3d_generic_3d_A_color = {
 						buffer_index = shader.ATTR_generic_3d_generic_3d_A_color,
+						format = .FLOAT4,
+					},
+					shader.ATTR_generic_3d_generic_3d_A_tiling_info = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_tiling_info,
+						format = .FLOAT4,
+					},
+					shader.ATTR_generic_3d_generic_3d_A_tiling_param = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_tiling_param,
 						format = .FLOAT4,
 					},
 				},
@@ -1058,6 +1084,8 @@ GFX_create_3d_renderer :: proc(
 					shader.ATTR_generic_3d_generic_3d_A_normal = {stride = size_of(M_Vec3f32)},
 					shader.ATTR_generic_3d_generic_3d_A_uv = {stride = size_of(M_Vec2f32)},
 					shader.ATTR_generic_3d_generic_3d_A_color = {stride = size_of(M_FColor)},
+					shader.ATTR_generic_3d_generic_3d_A_tiling_info = {stride = size_of(M_Vec4f32)},
+					shader.ATTR_generic_3d_generic_3d_A_tiling_param = {stride = size_of(M_Vec4f32)},
 				},
 				attrs = {
 					shader.ATTR_generic_3d_generic_3d_A_position = {
@@ -1074,6 +1102,14 @@ GFX_create_3d_renderer :: proc(
 					},
 					shader.ATTR_generic_3d_generic_3d_A_color = {
 						buffer_index = shader.ATTR_generic_3d_generic_3d_A_color,
+						format = .FLOAT4,
+					},
+					shader.ATTR_generic_3d_generic_3d_A_tiling_info = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_tiling_info,
+						format = .FLOAT4,
+					},
+					shader.ATTR_generic_3d_generic_3d_A_tiling_param = {
+						buffer_index = shader.ATTR_generic_3d_generic_3d_A_tiling_param,
 						format = .FLOAT4,
 					},
 				},
@@ -1145,6 +1181,8 @@ GFX_create_3d_renderer :: proc(
 	ren.vertex_normals = make([]M_Vec3f32, max_vertex)
 	ren.vertex_uvs = make([]M_Vec2f32, max_vertex)
 	ren.vertex_colors = make([]M_FColor, max_vertex)
+	ren.vertex_tiling_infos = make([]M_Vec4f32, max_vertex)
+	ren.vertex_tiling_params = make([]M_Vec4f32, max_vertex)
 	ren.indices = make([]GFX__3D_Index, max_index)
 	ren.batches = make([]GFX__3D_Batch, max_batch)
 
@@ -1174,6 +1212,8 @@ GFX_destroy_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 	delete(ren.vertex_normals)
 	delete(ren.vertex_uvs)
 	delete(ren.vertex_colors)
+	delete(ren.vertex_tiling_infos)
+	delete(ren.vertex_tiling_params)
 	delete(ren.indices)
 	delete(ren.batches)
 
@@ -1266,6 +1306,14 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 		{raw_data(ren.vertex_colors), uint(ren.num_vertices)*size_of(ren.vertex_colors[0])},
 	)
 	sg.update_buffer(
+		ren.vertex_tiling_info_buffer,
+		{raw_data(ren.vertex_tiling_infos), uint(ren.num_vertices)*size_of(ren.vertex_tiling_infos[0])},
+	)
+	sg.update_buffer(
+		ren.vertex_tiling_param_buffer,
+		{raw_data(ren.vertex_tiling_params), uint(ren.num_vertices)*size_of(ren.vertex_tiling_params[0])},
+	)
+	sg.update_buffer(
 		ren.index_buffer,
 		{raw_data(ren.indices), uint(ren.num_indices)*size_of(ren.indices[0])},
 	)
@@ -1304,6 +1352,8 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 				shader.ATTR_generic_3d_generic_3d_A_normal = ren.vertex_normal_buffer,
 				shader.ATTR_generic_3d_generic_3d_A_uv = ren.vertex_uv_buffer,
 				shader.ATTR_generic_3d_generic_3d_A_color = ren.vertex_color_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_tiling_info = ren.vertex_tiling_info_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_tiling_param = ren.vertex_tiling_param_buffer,
 			},
 			index_buffer = ren.index_buffer,
 			images = {shader.IMG_generic_3d_U_texture = batch.texture},
@@ -1323,10 +1373,12 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 
 		sg.apply_bindings({
 			vertex_buffers = {
-				0 = ren.vertex_pos_buffer,
-				1 = ren.vertex_normal_buffer,
-				2 = ren.vertex_uv_buffer,
-				3 = ren.vertex_color_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_position = ren.vertex_pos_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_normal = ren.vertex_normal_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_uv = ren.vertex_uv_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_color = ren.vertex_color_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_tiling_info = ren.vertex_tiling_info_buffer,
+				shader.ATTR_generic_3d_generic_3d_A_tiling_param = ren.vertex_tiling_param_buffer,
 			},
 			index_buffer = ren.index_buffer,
 			images = {shader.IMG_generic_3d_U_texture = batch.texture},
@@ -1369,6 +1421,8 @@ GFX_draw_3d_triangle :: proc(
 	ren.vertex_normals[ren.num_vertices] = n1
 	ren.vertex_uvs[ren.num_vertices] = {0.0, 0.0}
 	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c1)
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
 	ren.indices[ren.num_indices] = GFX__3D_Index(ren.num_vertices)
 	ren.num_vertices += 1
 	ren.num_indices += 1
@@ -1377,6 +1431,8 @@ GFX_draw_3d_triangle :: proc(
 	ren.vertex_normals[ren.num_vertices] = n2
 	ren.vertex_uvs[ren.num_vertices] = {1.0, 0.0}
 	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c2)
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
 	ren.indices[ren.num_indices] = GFX__3D_Index(ren.num_vertices)
 	ren.num_vertices += 1
 	ren.num_indices += 1
@@ -1385,6 +1441,8 @@ GFX_draw_3d_triangle :: proc(
 	ren.vertex_normals[ren.num_vertices] = n3
 	ren.vertex_uvs[ren.num_vertices] = {1.0, 1.0}
 	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c3)
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
 	ren.indices[ren.num_indices] = GFX__3D_Index(ren.num_vertices)
 	ren.num_vertices += 1
 	ren.num_indices += 1
@@ -1507,24 +1565,148 @@ GFX_draw_3d_texture :: proc(
 	ren.vertex_normals[ren.num_vertices] = n1
 	ren.vertex_uvs[ren.num_vertices] = {src_min.x, src_min.y}
 	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c1)
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
 	ren.num_vertices += 1
 
 	ren.vertex_positions[ren.num_vertices] = p2
 	ren.vertex_normals[ren.num_vertices] = n2
 	ren.vertex_uvs[ren.num_vertices] = {src_max.x, src_min.y}
 	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c2)
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
 	ren.num_vertices += 1
 
 	ren.vertex_positions[ren.num_vertices] = p3
 	ren.vertex_normals[ren.num_vertices] = n3
 	ren.vertex_uvs[ren.num_vertices] = {src_max.x, src_max.y}
 	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c3)
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
 	ren.num_vertices += 1
 
 	ren.vertex_positions[ren.num_vertices] = p4
 	ren.vertex_normals[ren.num_vertices] = n4
 	ren.vertex_uvs[ren.num_vertices] = {src_min.x, src_max.y}
 	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c4)
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.num_vertices += 1
+
+	ren.indices[ren.num_indices + 0] = start_index + 0
+	ren.indices[ren.num_indices + 1] = start_index + 1
+	ren.indices[ren.num_indices + 2] = start_index + 2
+	ren.indices[ren.num_indices + 3] = start_index + 0
+	ren.indices[ren.num_indices + 4] = start_index + 2
+	ren.indices[ren.num_indices + 5] = start_index + 3
+	ren.num_indices += 6
+}
+
+GFX_3D_Tile_Normal :: enum {
+	Pos_X,
+	Neg_X,
+	Pos_Y,
+	Neg_Y,
+	Pos_Z,
+	Neg_Z,
+}
+
+GFX_draw_3d_texture_tiled :: proc(
+	ren: ^GFX_3D_Renderer,
+	tex: sg.Image,
+	smp: sg.Sampler,
+	world_unit_per_tile: f32,
+	num_columns, num_rows: int,
+	column, row: int,
+	facing: GFX_3D_Tile_Normal,
+	p1: M_Vec3f32, c1: M_Color,
+	p2: M_Vec3f32, c2: M_Color,
+	p3: M_Vec3f32, c3: M_Color,
+	p4: M_Vec3f32, c4: M_Color,
+) {
+	GFX__new_3d_batch_if_needed(ren, .Normal, tex, smp)
+
+	start_index := GFX__3D_Index(ren.num_vertices)
+
+	normal: M_Vec3f32
+	switch facing {
+	case .Pos_X: normal.x = +1.0
+	case .Neg_X: normal.x = -1.0
+	case .Pos_Y: normal.y = +1.0
+	case .Neg_Y: normal.y = -1.0
+	case .Pos_Z: normal.z = +1.0
+	case .Neg_Z: normal.z = -1.0
+	}
+
+	tile_uv_size := 1.0/M_Vec2f32{f32(num_columns), f32(num_rows)}
+	tile_min_uv := tile_uv_size*{f32(column), f32(row)}
+	tiling_info := M_Vec4f32{
+		tile_min_uv.x,
+		tile_min_uv.y,
+		tile_uv_size.x,
+		tile_uv_size.y,
+	}
+
+	tile_local_offset: M_Vec2f32
+	tile_repeat_amount: M_Vec2f32
+
+	switch facing {
+	case .Pos_X, .Neg_X:
+		tile_local_offset.x = math.mod(p1.z, world_unit_per_tile)
+		tile_local_offset.y = math.mod(p1.y, world_unit_per_tile)
+		tile_repeat_amount.x = (p3.z - p1.z)/world_unit_per_tile
+		tile_repeat_amount.y = (p3.y - p1.y)/world_unit_per_tile
+
+	case .Pos_Y, .Neg_Y:
+		tile_local_offset.x = math.mod(p1.x, world_unit_per_tile)
+		tile_local_offset.y = math.mod(p1.z, world_unit_per_tile)
+		tile_repeat_amount.x = (p3.x - p1.x)/world_unit_per_tile
+		tile_repeat_amount.y = (p3.z - p1.z)/world_unit_per_tile
+
+	case .Pos_Z, .Neg_Z:
+		tile_local_offset.x = math.mod(p1.x, world_unit_per_tile)
+		tile_local_offset.y = math.mod(p1.y, world_unit_per_tile)
+		tile_repeat_amount.x = (p3.x - p1.x)/world_unit_per_tile
+		tile_repeat_amount.y = (p3.y - p1.y)/world_unit_per_tile
+	}
+
+	tiling_param := M_Vec4f32{
+		tile_local_offset.x,
+		tile_local_offset.y,
+		tile_repeat_amount.x,
+		tile_repeat_amount.y,
+	}
+
+	ren.vertex_positions[ren.num_vertices] = p1
+	ren.vertex_normals[ren.num_vertices] = normal
+	ren.vertex_uvs[ren.num_vertices] = {0.0, 1.0}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c1)
+	ren.vertex_tiling_infos[ren.num_vertices] = tiling_info
+	ren.vertex_tiling_params[ren.num_vertices] = tiling_param
+	ren.num_vertices += 1
+
+	ren.vertex_positions[ren.num_vertices] = p2
+	ren.vertex_normals[ren.num_vertices] = normal
+	ren.vertex_uvs[ren.num_vertices] = {1.0, 1.0}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c2)
+	ren.vertex_tiling_infos[ren.num_vertices] = tiling_info
+	ren.vertex_tiling_params[ren.num_vertices] = tiling_param
+	ren.num_vertices += 1
+
+	ren.vertex_positions[ren.num_vertices] = p3
+	ren.vertex_normals[ren.num_vertices] = normal
+	ren.vertex_uvs[ren.num_vertices] = {1.0, 0.0}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c3)
+	ren.vertex_tiling_infos[ren.num_vertices] = tiling_info
+	ren.vertex_tiling_params[ren.num_vertices] = tiling_param
+	ren.num_vertices += 1
+
+	ren.vertex_positions[ren.num_vertices] = p4
+	ren.vertex_normals[ren.num_vertices] = normal
+	ren.vertex_uvs[ren.num_vertices] = {0.0, 0.0}
+	ren.vertex_colors[ren.num_vertices] = M_frgba_from_urgba(c4)
+	ren.vertex_tiling_infos[ren.num_vertices] = tiling_info
+	ren.vertex_tiling_params[ren.num_vertices] = tiling_param
 	ren.num_vertices += 1
 
 	ren.indices[ren.num_indices + 0] = start_index + 0
@@ -1628,24 +1810,32 @@ GFX_draw_3d_decal_texture :: proc(
 	ren.vertex_normals[ren.num_vertices] = normal
 	ren.vertex_uvs[ren.num_vertices] = {src_min.x, src_min.y}
 	ren.vertex_colors[ren.num_vertices] = col
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
 	ren.num_vertices += 1
 
 	ren.vertex_positions[ren.num_vertices] = p2
 	ren.vertex_normals[ren.num_vertices] = normal
 	ren.vertex_uvs[ren.num_vertices] = {src_max.x, src_min.y}
 	ren.vertex_colors[ren.num_vertices] = col
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
 	ren.num_vertices += 1
 
 	ren.vertex_positions[ren.num_vertices] = p3
 	ren.vertex_normals[ren.num_vertices] = normal
 	ren.vertex_uvs[ren.num_vertices] = {src_max.x, src_max.y}
 	ren.vertex_colors[ren.num_vertices] = col
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
 	ren.num_vertices += 1
 
 	ren.vertex_positions[ren.num_vertices] = p4
 	ren.vertex_normals[ren.num_vertices] = normal
 	ren.vertex_uvs[ren.num_vertices] = {src_min.x, src_max.y}
 	ren.vertex_colors[ren.num_vertices] = col
+	ren.vertex_tiling_infos[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
+	ren.vertex_tiling_params[ren.num_vertices] = {0.0, 0.0, 1.0, 1.0}
 	ren.num_vertices += 1
 
 	ren.indices[ren.num_indices + 0] = start_index + 0

@@ -177,7 +177,7 @@ scn_editor_draw :: proc(alpha: f32) {
 	_ctx.was_3d_view = _ctx.is_3d_view
 
 	im.SetNextWindowPos(_MAIN_UI_WINDOW_POSITION, .FirstUseEver)
-	im.SetNextWindowSize({200.0, 300.0}, .FirstUseEver)
+	im.SetNextWindowSize({300.0, 300.0}, .FirstUseEver)
 	im.Begin("MAIN")
 	im.Checkbox("3D_VIEW", &_ctx.is_3d_view)
 
@@ -198,7 +198,7 @@ scn_editor_draw :: proc(alpha: f32) {
 		_ctx.next_floor_y = min(_ctx.next_floor_y, floor_y_max)
 
 		ceiling_y_min := _ctx.next_floor_y + _FLOOR_AND_CEILING_Y_INCREMENT
-		im.Text("CEILING_Y:")
+		im.Text("NEXT_CEILING_Y:")
 		im.SameLine()
 		im.SetNextItemWidth(80.0)
 		im.DragFloat("###NEXT_SECTOR_CEILING_Y", &_ctx.next_ceiling_y, _FLOOR_AND_CEILING_Y_INCREMENT, ceiling_y_min, 1000.0)

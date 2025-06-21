@@ -42,7 +42,7 @@
 
 # level editor
 	NOTE: when sectors are overlapping, assume that the current sector is the smallest one
-	- sector
+	X sector
 		X place
 		X select
 			X move
@@ -53,7 +53,7 @@
 		X draw 3d view
 		X assign sector to chunks for optimization (for collision, editor, etc.)
 		X texture
-		- texture tiling
+		X texture tiling
 		X match floor/ceiling y with another sector
 	- object
 		- place

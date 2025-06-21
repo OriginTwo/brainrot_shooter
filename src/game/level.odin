@@ -58,6 +58,10 @@ LVL_load_texture :: proc(lvl: ^LVL_Level) {
 }
 
 LVL_draw :: proc(lvl: LVL_Level, ren3d: ^GFX_3D_Renderer) {
+	WORLD_UNIT_PER_TILE :: 1.5
+	NUM_COLUMNS :: 8
+	NUM_ROWS :: 8
+
 	for sector in lvl.sectors {
 		x1 := sector.position.x
 		z1 := sector.position.y
@@ -65,31 +69,39 @@ LVL_draw :: proc(lvl: LVL_Level, ren3d: ^GFX_3D_Renderer) {
 		z2 := sector.position.y + sector.size.y
 
 		// floor
-		GFX_draw_3d_texture(
+		floor_col, floor_row := LVL__get_texture_column_and_row_from_id(sector.floor_texture_id)
+		GFX_draw_3d_texture_tiled(
 			ren3d,
 			lvl.texture.texture, lvl.texture.sampler,
-			LVL_TEXTURE_SOURCES[sector.floor_texture_id],
-			{x1, sector.floor_y, z1}, {0.0, 1.0, 0.0}, M_COLOR_WHITE,
-			{x2, sector.floor_y, z1}, {0.0, 1.0, 0.0}, M_COLOR_WHITE,
-			{x2, sector.floor_y, z2}, {0.0, 1.0, 0.0}, M_COLOR_WHITE,
-			{x1, sector.floor_y, z2}, {0.0, 1.0, 0.0}, M_COLOR_WHITE,
+			WORLD_UNIT_PER_TILE,
+			NUM_COLUMNS, NUM_ROWS,
+			floor_col, floor_row,
+			.Pos_Y,
+			{x1, sector.floor_y, z1}, M_COLOR_WHITE,
+			{x2, sector.floor_y, z1}, M_COLOR_WHITE,
+			{x2, sector.floor_y, z2}, M_COLOR_WHITE,
+			{x1, sector.floor_y, z2}, M_COLOR_WHITE,
 		)
 
 		// ceiling
-		GFX_draw_3d_texture(
+		ceiling_col, ceiling_row := LVL__get_texture_column_and_row_from_id(sector.ceiling_texture_id)
+		GFX_draw_3d_texture_tiled(
 			ren3d,
 			lvl.texture.texture, lvl.texture.sampler,
-			LVL_TEXTURE_SOURCES[sector.ceiling_texture_id],
-			{x1, sector.ceiling_y, z2}, {0.0, -1.0, 0.0}, M_COLOR_WHITE,
-			{x2, sector.ceiling_y, z2}, {0.0, -1.0, 0.0}, M_COLOR_WHITE,
-			{x2, sector.ceiling_y, z1}, {0.0, -1.0, 0.0}, M_COLOR_WHITE,
-			{x1, sector.ceiling_y, z1}, {0.0, -1.0, 0.0}, M_COLOR_WHITE,
+			WORLD_UNIT_PER_TILE,
+			NUM_COLUMNS, NUM_ROWS,
+			ceiling_col, ceiling_row,
+			.Neg_Y,
+			{x1, sector.ceiling_y, z2}, M_COLOR_WHITE,
+			{x2, sector.ceiling_y, z2}, M_COLOR_WHITE,
+			{x2, sector.ceiling_y, z1}, M_COLOR_WHITE,
+			{x1, sector.ceiling_y, z1}, M_COLOR_WHITE,
 		)
 	}
 
 	for wall in lvl.walls {
 		p1, p2, p3, p4: M_Vec3f32
-		normal: M_Vec3f32
+		facing: GFX_3D_Tile_Normal
 
 		switch wall.facing {
 		case .North:
@@ -97,38 +109,55 @@ LVL_draw :: proc(lvl: LVL_Level, ren3d: ^GFX_3D_Renderer) {
 			p2 = {wall.p1.x, wall.y + wall.height, wall.p1.y}
 			p3 = {wall.p1.x, wall.y,               wall.p1.y}
 			p4 = {wall.p2.x, wall.y,               wall.p2.y}
-			normal = {0.0, 0.0, -1.0}
+			facing = .Neg_Z
 
 		case .East:
 			p1 = {wall.p2.x, wall.y + wall.height, wall.p2.y}
 			p2 = {wall.p1.x, wall.y + wall.height, wall.p1.y}
 			p3 = {wall.p1.x, wall.y,               wall.p1.y}
 			p4 = {wall.p2.x, wall.y,               wall.p2.y}
-			normal = {+1.0, 0.0, 0.0}
+			facing = .Pos_X
 
 		case .South:
-			p1 = {wall.p1.x, wall.y + wall.height, wall.p2.y}
+			p1 = {wall.p1.x, wall.y + wall.height, wall.p1.y}
 			p2 = {wall.p2.x, wall.y + wall.height, wall.p2.y}
-			p3 = {wall.p2.x, wall.y,               wall.p1.y}
+			p3 = {wall.p2.x, wall.y,               wall.p2.y}
 			p4 = {wall.p1.x, wall.y,               wall.p1.y}
-			normal = {0.0, 0.0, +1.0}
+			facing = .Pos_Z
 
 		case .West:
 			p1 = {wall.p1.x, wall.y + wall.height, wall.p1.y}
 			p2 = {wall.p2.x, wall.y + wall.height, wall.p2.y}
 			p3 = {wall.p2.x, wall.y,               wall.p2.y}
 			p4 = {wall.p1.x, wall.y,               wall.p1.y}
-			normal = {-1.0, 0.0, 0.0}
+			facing = .Neg_X
 		}
 
-		GFX_draw_3d_texture(
+		col, row := LVL__get_texture_column_and_row_from_id(wall.texture_id)
+		GFX_draw_3d_texture_tiled(
 			ren3d,
 			lvl.texture.texture, lvl.texture.sampler,
-			LVL_TEXTURE_SOURCES[wall.texture_id],
-			p1, normal, M_COLOR_WHITE,
-			p2, normal, M_COLOR_WHITE,
-			p3, normal, M_COLOR_WHITE,
-			p4, normal, M_COLOR_WHITE,
+			WORLD_UNIT_PER_TILE,
+			NUM_COLUMNS, NUM_ROWS,
+			col, row,
+			facing,
+			p1, M_COLOR_WHITE,
+			p2, M_COLOR_WHITE,
+			p3, M_COLOR_WHITE,
+			p4, M_COLOR_WHITE,
 		)
 	}
+}
+
+
+
+@(private="file")
+LVL__get_texture_column_and_row_from_id :: proc(id: LVL_Texture_ID) -> (col, row: int) {
+	switch id {
+	case .Nil:     row = -1; col = -1
+	case .No_Tex:  row = 0; col = 0
+	case .UV_Test: row = 0; col = 1
+	case .Brick:   row = 1; col = 0
+	}
+	return
 }

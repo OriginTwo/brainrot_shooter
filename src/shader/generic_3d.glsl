@@ -20,10 +20,14 @@ in vec3 A_position;
 in vec3 A_normal;
 in vec2 A_uv;
 in vec4 A_color;
+in vec4 A_tiling_info;  // xy = tile_min_uv,  zw = tile_size [0.0..1.0]
+in vec4 A_tiling_param; // xy = local_offset, zw = repeat_amount
 
 out vec3 F_normal;
 out vec2 F_uv;
 out vec4 F_color;
+out vec4 F_tiling_info;
+out vec4 F_tiling_param;
 out vec3 F_rel_vertex_pos;
 out vec3 F_to_lights[MAX_POINT_LIGHT];
 
@@ -32,6 +36,8 @@ void main() {
 	F_normal = A_normal;
 	F_uv = A_uv;
 	F_color = A_color;
+	F_tiling_info = A_tiling_info;
+	F_tiling_param = A_tiling_param;
 	F_rel_vertex_pos = (U_param.view*vec4(A_position, 1.0)).xyz;
 
 	for (int i = 0; i < MAX_POINT_LIGHT; i++) {
@@ -47,6 +53,8 @@ void main() {
 in vec3 F_normal;
 in vec2 F_uv;
 in vec4 F_color;
+in vec4 F_tiling_info;
+in vec4 F_tiling_param;
 in vec3 F_rel_vertex_pos;
 in vec3 F_to_lights[MAX_POINT_LIGHT];
 
@@ -94,7 +102,16 @@ void main() {
 	// ambient light
 	total_diffuse = max(total_diffuse, 0.12);
 
-	O_color = vec4(total_diffuse, 1.0)*texture(sampler2D(U_texture, U_sampler), F_uv)*F_color;
+	// tiling
+	vec2 tile_min_uv = F_tiling_info.xy;
+	vec2 tile_uv_size = F_tiling_info.zw;
+	vec2 tile_local_offset = F_tiling_param.xy;
+	vec2 tile_repeat_amount = F_tiling_param.zw;
+	vec2 tile_uv = fract(tile_local_offset + F_uv*tile_repeat_amount);
+	vec2 atlas_uv = tile_min_uv + tile_uv*tile_uv_size;
+	vec2 final_uv = atlas_uv;
+
+	O_color = vec4(total_diffuse, 1.0)*texture(sampler2D(U_texture, U_sampler), final_uv)*F_color;
 	O_color = mix(vec4(U_param.fog_color, 1.0), O_color, F_visibility);
 
 	float brightness = dot(O_color.rgb, vec3(0.2126, 0.7152, 0.0722));
