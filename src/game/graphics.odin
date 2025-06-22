@@ -1215,6 +1215,27 @@ GFX_begin_3d_renderer :: proc(ren: ^GFX_3D_Renderer, cam: GFX_Camera) {
 
 GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 	if ren.num_vertices == 0 || ren.num_indices == 0 {
+		// just clear the background
+		sg.begin_pass({
+			action = {
+				colors = {
+					0 = {
+						load_action = .CLEAR,
+						clear_value = {0.0, 0.0, 0.0, 1.0},
+					},
+					1 = {
+						load_action = .CLEAR,
+						clear_value = {0.0, 0.0, 0.0, 1.0},
+					},
+				},
+				depth = {
+					load_action = .CLEAR,
+					clear_value = 1.0,
+				},
+			},
+			attachments = ren.attachments,
+		})
+		sg.end_pass()
 		return
 	}
 

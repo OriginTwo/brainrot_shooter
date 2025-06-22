@@ -3,6 +3,7 @@ package game
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
+import "core:slice"
 import "core:bytes"
 import "core:unicode/utf16"
 import "core:path/filepath"
@@ -113,7 +114,7 @@ scn_editor_init :: proc() {
 		_ctx.offset_2d = -{f32(win_size.x), f32(win_size.y)}/2.0
 	}
 
-	LVL_load_texture(&_ctx.level_preview)
+	LVL_init(&_ctx.level_preview)
 }
 
 scn_editor_uninit :: proc() {
@@ -128,7 +129,7 @@ scn_editor_uninit :: proc() {
 	}
 	delete(_ctx.level.chunks)
 
-	_delete_level_preview()
+	LVL_uninit(&_ctx.level_preview)
 
 	GFX_destroy_2d_renderer(&_ctx.ren2d)
 	GFX_destroy_3d_renderer(&_ctx.ren3d)
@@ -278,9 +279,7 @@ scn_editor_draw :: proc(alpha: f32) {
 
 
 
-@(private="file") _GRID_PER_CHUNK :: 16
-@(private="file") _UNIT_PER_GRID :: 0.5
-@(private="file") _FLOOR_AND_CEILING_Y_INCREMENT :: _UNIT_PER_GRID/2.0
+@(private="file") _FLOOR_AND_CEILING_Y_INCREMENT :: LVL_UNIT_PER_GRID/2.0
 @(private="file") _MAX_SECTOR_GRID_COORD :: 65535
 @(private="file") _INVALID_GRID_COORD :: [2]int{_MAX_SECTOR_GRID_COORD, _MAX_SECTOR_GRID_COORD}
 @(private="file") _2D_GRID_SIZE :: 24
@@ -473,20 +472,20 @@ _draw_2d_view :: proc(alpha: f32) {
 		minimum := _ctx.offset_2d
 		maximum := _ctx.offset_2d + {f32(win_size.x), f32(win_size.y)}
 
-		start_x := (int(minimum.x)/_2D_GRID_SIZE)/_GRID_PER_CHUNK - 1
-		start_y := (int(minimum.y)/_2D_GRID_SIZE)/_GRID_PER_CHUNK - 1
-		end_x := (int(maximum.x)/_2D_GRID_SIZE + 1)/_GRID_PER_CHUNK + 1
-		end_y := (int(maximum.y)/_2D_GRID_SIZE + 1)/_GRID_PER_CHUNK + 1
+		start_x := (int(minimum.x)/_2D_GRID_SIZE)/LVL_GRID_PER_CHUNK - 1
+		start_y := (int(minimum.y)/_2D_GRID_SIZE)/LVL_GRID_PER_CHUNK - 1
+		end_x := (int(maximum.x)/_2D_GRID_SIZE + 1)/LVL_GRID_PER_CHUNK + 1
+		end_y := (int(maximum.y)/_2D_GRID_SIZE + 1)/LVL_GRID_PER_CHUNK + 1
 
 		for y in start_y..<end_y {
 			for x in start_x..<end_x {
 				GFX_draw_2d_rect_line(
 					&_ctx.ren2d,
 					{
-						f32(x*_2D_GRID_SIZE*_GRID_PER_CHUNK) - _ctx.offset_2d.x,
-						f32(y*_2D_GRID_SIZE*_GRID_PER_CHUNK) - _ctx.offset_2d.y,
-						_2D_GRID_SIZE*_GRID_PER_CHUNK,
-						_2D_GRID_SIZE*_GRID_PER_CHUNK,
+						f32(x*_2D_GRID_SIZE*LVL_GRID_PER_CHUNK) - _ctx.offset_2d.x,
+						f32(y*_2D_GRID_SIZE*LVL_GRID_PER_CHUNK) - _ctx.offset_2d.y,
+						_2D_GRID_SIZE*LVL_GRID_PER_CHUNK,
+						_2D_GRID_SIZE*LVL_GRID_PER_CHUNK,
 					},
 					{127, 127, 127, 200},
 				)
@@ -549,10 +548,10 @@ _draw_2d_view :: proc(alpha: f32) {
 					GFX_draw_2d_rect_line(
 						&_ctx.ren2d,
 						{
-							f32(x*_2D_GRID_SIZE*_GRID_PER_CHUNK) - _ctx.offset_2d.x,
-							f32(y*_2D_GRID_SIZE*_GRID_PER_CHUNK) - _ctx.offset_2d.y,
-							_2D_GRID_SIZE*_GRID_PER_CHUNK,
-							_2D_GRID_SIZE*_GRID_PER_CHUNK,
+							f32(x*_2D_GRID_SIZE*LVL_GRID_PER_CHUNK) - _ctx.offset_2d.x,
+							f32(y*_2D_GRID_SIZE*LVL_GRID_PER_CHUNK) - _ctx.offset_2d.y,
+							_2D_GRID_SIZE*LVL_GRID_PER_CHUNK,
+							_2D_GRID_SIZE*LVL_GRID_PER_CHUNK,
 						},
 						{0, 255, 255, 100},
 					)
@@ -821,7 +820,11 @@ _tick_3d_view :: proc(input: INP_State, delta: f32) {
 _draw_3d_view :: proc(alpha: f32) {
 	GFX_begin_3d_renderer(&_ctx.ren3d, _ctx.cam)
 
-	LVL_draw(_ctx.level_preview, &_ctx.ren3d)
+	LVL_draw(
+		&_ctx.level_preview,
+		&_ctx.ren3d,
+		{_ctx.cam.position.x, _ctx.cam.position.z},
+	)
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = _ctx.cam.position,
@@ -888,7 +891,7 @@ _Level :: struct {
 
 @(private="file")
 _get_chunk_coord :: proc(position: [2]int) -> [2]int {
-	result := position/_GRID_PER_CHUNK
+	result := position/LVL_GRID_PER_CHUNK
 	if position.x < 0 {
 		result.x -= 1
 	}
@@ -900,7 +903,14 @@ _get_chunk_coord :: proc(position: [2]int) -> [2]int {
 
 @(private="file")
 _get_chunk_coord_range :: proc(position, size: [2]int) -> (min, max: [2]int) {
-	min = _get_chunk_coord(position)
+	min_coord := position
+	if min_coord.x < 0 {
+		min_coord.x += 1
+	}
+	if min_coord.y < 0 {
+		min_coord.y += 1
+	}
+	min = _get_chunk_coord(min_coord)
 
 	max_coord := position + size
 	if max_coord.x >= 0 {
@@ -1031,8 +1041,8 @@ _get_sector_ptr :: proc(handle: _Sector_Handle) -> (result: ^_Sector) {
 
 @(private="file")
 _construct_level_preview :: proc() {
-	_delete_level_preview()
-	LVL_load_texture(&_ctx.level_preview)
+	LVL_uninit(&_ctx.level_preview)
+	LVL_init(&_ctx.level_preview)
 
 	sectors := make([]LVL_Sector, len(_ctx.level.sectors))
 	walls := make([dynamic]LVL_Wall, 0, 32)
@@ -1040,8 +1050,8 @@ _construct_level_preview :: proc() {
 	// sectors
 	for sector, i in _ctx.level.sectors {
 		sectors[i] = {
-			position = {f32(sector.position.x)*_UNIT_PER_GRID, f32(sector.position.y)*_UNIT_PER_GRID},
-			size = {f32(sector.size.x)*_UNIT_PER_GRID, f32(sector.size.y)*_UNIT_PER_GRID},
+			position = {f32(sector.position.x)*LVL_UNIT_PER_GRID, f32(sector.position.y)*LVL_UNIT_PER_GRID},
+			size = {f32(sector.size.x)*LVL_UNIT_PER_GRID, f32(sector.size.y)*LVL_UNIT_PER_GRID},
 			floor_y = sector.floor_y,
 			ceiling_y = sector.ceiling_y,
 			floor_texture_id = sector.floor_texture_id,
@@ -1174,24 +1184,24 @@ _construct_level_preview :: proc() {
 
 		switch dir {
 		case .North:
-			wall_p2_offset.x = _UNIT_PER_GRID
+			wall_p2_offset.x = LVL_UNIT_PER_GRID
 			dir_to_extend = .West
 			facing_dir = .South
 
 		case .East:
-			wall_offset.x += _UNIT_PER_GRID
-			wall_p2_offset.y = _UNIT_PER_GRID
+			wall_offset.x += LVL_UNIT_PER_GRID
+			wall_p2_offset.y = LVL_UNIT_PER_GRID
 			dir_to_extend = .North
 			facing_dir = .West
 
 		case .South:
-			wall_offset.y += _UNIT_PER_GRID
-			wall_p2_offset.x = _UNIT_PER_GRID
+			wall_offset.y += LVL_UNIT_PER_GRID
+			wall_p2_offset.x = LVL_UNIT_PER_GRID
 			dir_to_extend = .West
 			facing_dir = .North
 
 		case .West:
-			wall_p2_offset.y = _UNIT_PER_GRID
+			wall_p2_offset.y = LVL_UNIT_PER_GRID
 			dir_to_extend = .North
 			facing_dir = .East
 		}
@@ -1218,7 +1228,7 @@ _construct_level_preview :: proc() {
 				walls[curr_cell.wall_indices[dir][0]].p2 += wall_p2_offset
 			} else {
 				curr_cell.wall_indices[dir][0] = len(walls)
-				wall_p1 := M_Vec2f32{f32(x)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID}
+				wall_p1 := M_Vec2f32{f32(x)*LVL_UNIT_PER_GRID, f32(y)*LVL_UNIT_PER_GRID}
 				append(walls, LVL_Wall{
 					p1 = wall_offset + wall_p1,
 					p2 = wall_offset + wall_p1 + wall_p2_offset,
@@ -1244,7 +1254,7 @@ _construct_level_preview :: proc() {
 					walls[curr_cell.wall_indices[dir][0]].p2 += wall_p2_offset
 				} else {
 					curr_cell.wall_indices[dir][0] = len(walls)
-					wall_p1 := M_Vec2f32{f32(x)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID}
+					wall_p1 := M_Vec2f32{f32(x)*LVL_UNIT_PER_GRID, f32(y)*LVL_UNIT_PER_GRID}
 					append(walls, LVL_Wall{
 						p1 = wall_offset + wall_p1,
 						p2 = wall_offset + wall_p1 + wall_p2_offset,
@@ -1269,7 +1279,7 @@ _construct_level_preview :: proc() {
 					walls[curr_cell.wall_indices[dir][1]].p2 += wall_p2_offset
 				} else {
 					curr_cell.wall_indices[dir][1] = len(walls)
-					wall_p1 := M_Vec2f32{f32(x)*_UNIT_PER_GRID, f32(y)*_UNIT_PER_GRID}
+					wall_p1 := M_Vec2f32{f32(x)*LVL_UNIT_PER_GRID, f32(y)*LVL_UNIT_PER_GRID}
 					append(walls, LVL_Wall{
 						p1 = wall_offset + wall_p1,
 						p2 = wall_offset + wall_p1 + wall_p2_offset,
@@ -1305,8 +1315,11 @@ _construct_level_preview :: proc() {
 			wall_offset := M_Vec2f32{
 				f32(min_pos.x),
 				f32(min_pos.y),
-			}*_UNIT_PER_GRID
+			}*LVL_UNIT_PER_GRID
 
+			// TODO: fix bug:
+			// when sector extends to east or south edge of the chunk
+			// the wall for that side doesn't get generated
 			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .North, wall_offset)
 			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .East,  wall_offset)
 			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .South, wall_offset)
@@ -1314,19 +1327,51 @@ _construct_level_preview :: proc() {
 		}
 	}
 	_ctx.level_preview.walls = walls[:]
-}
 
-@(private="file")
-_delete_level_preview :: proc() {
-	if _ctx.level_preview.sectors != nil {
-		delete(_ctx.level_preview.sectors)
+	// chunks
+	_Temp_Chunk :: struct {
+		sector_indices: [dynamic]int,
+		wall_indices: [dynamic]int,
+	}
+	temp_chunks: map[[2]int]_Temp_Chunk
+	defer {
+		for _, &chunk in temp_chunks {
+			delete(chunk.sector_indices)
+			delete(chunk.wall_indices)
+		}
+		delete(temp_chunks)
 	}
 
-	if _ctx.level_preview.walls != nil {
-		delete(_ctx.level_preview.walls)
+	for sector, i in _ctx.level_preview.sectors {
+		min_chunk_coord, max_chunk_coord := LVL_get_chunk_coord_range(sector.position, sector.size)
+		for y in min_chunk_coord.y..<max_chunk_coord.y {
+			for x in min_chunk_coord.x..<max_chunk_coord.x {
+				if ([2]int{x, y}) not_in temp_chunks {
+					temp_chunks[{x, y}] = {}
+				}
+				temp_chunk := &temp_chunks[{x, y}]
+				append(&temp_chunk.sector_indices, i)
+			}
+		}
 	}
 
-	_ctx.level_preview = {}
+	for wall, i in _ctx.level_preview.walls {
+		min_chunk_coord, max_chunk_coord := LVL_get_chunk_coord_range(wall.p1, linalg.abs(wall.p2 - wall.p1))
+		for y in min_chunk_coord.y..<max_chunk_coord.y {
+			for x in min_chunk_coord.x..<max_chunk_coord.x {
+				temp_chunk := &temp_chunks[{x, y}]
+				append(&temp_chunk.wall_indices, i)
+			}
+		}
+	}
+
+	_ctx.level_preview.chunks = make(map[[2]int]LVL_Chunk, len(temp_chunks))
+	for coord, temp_chunk in temp_chunks {
+		_ctx.level_preview.chunks[coord] = {
+			sector_indices = slice.clone(temp_chunk.sector_indices[:]),
+			wall_indices = slice.clone(temp_chunk.wall_indices[:]),
+		}
+	}
 }
 
 @(private="file")

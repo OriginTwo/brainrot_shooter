@@ -2,6 +2,19 @@ package game
 
 import sg "lib:sokol/gfx"
 
+LVL_GRID_PER_CHUNK :: 24
+LVL_UNIT_PER_GRID :: 0.5
+LVL_UNIT_PER_CHUNK :: LVL_UNIT_PER_GRID*LVL_GRID_PER_CHUNK
+LVL_UNIT_PER_TILE :: 1.5
+LVL_VISIBLE_CHUNK_RADIUS :: 2
+
+LVL_Texture_ID :: enum {
+	Nil,
+	No_Tex,
+	UV_Test,
+	Brick,
+}
+
 LVL_Sector :: struct {
 	position: M_Vec2f32,
 	size: M_Vec2f32,
@@ -27,22 +40,22 @@ LVL_Wall :: struct {
 	texture_id: LVL_Texture_ID,
 }
 
-LVL_Texture_ID :: enum {
-	Nil,
-	No_Tex,
-	UV_Test,
-	Brick,
+LVL_Chunk :: struct {
+	sector_indices: []int,
+	wall_indices: []int,
 }
-
-// LVL_Chunk :: struct {
-// 	// sector_indices: []int,
-// 	// wall_indices: []int,
-// }
 
 LVL_Level :: struct {
 	texture: GFX_Texture,
+	texture_num_cols: int,
+	texture_num_rows: int,
 	sectors: []LVL_Sector,
 	walls: []LVL_Wall,
+	chunks: map[[2]int]LVL_Chunk,
+
+	// only use the key
+	drawn_sector_indices: map[int]byte,
+	drawn_wall_indices: map[int]byte,
 }
 
 @(rodata)
@@ -53,16 +66,56 @@ LVL_TEXTURE_SOURCES := [LVL_Texture_ID]M_Rect{
 	.Brick   = {0*16.0, 1*16.0, 16.0, 16.0},
 }
 
-LVL_load_texture :: proc(lvl: ^LVL_Level) {
+LVL_init :: proc(lvl: ^LVL_Level) {
 	ASST_load_texture(&lvl.texture, IMAGE_LEVEL_PNG)
+	lvl.texture_num_cols = int(sg.query_image_width(lvl.texture.texture))/16
+	lvl.texture_num_rows = int(sg.query_image_height(lvl.texture.texture))/16
 }
 
-LVL_draw :: proc(lvl: LVL_Level, ren3d: ^GFX_3D_Renderer) {
-	WORLD_UNIT_PER_TILE :: 1.5
-	NUM_COLUMNS :: 8
-	NUM_ROWS :: 8
+LVL_uninit :: proc(lvl: ^LVL_Level) {
+	GFX_unload_texture(&lvl.texture)
+	delete(lvl.sectors)
+	delete(lvl.walls)
+	for _, &chunk in lvl.chunks {
+		delete(chunk.sector_indices)
+		delete(chunk.wall_indices)
+	}
+	delete(lvl.chunks)
+	delete(lvl.drawn_sector_indices)
+	delete(lvl.drawn_wall_indices)
+	lvl^ = {}
+}
 
-	for sector in lvl.sectors {
+LVL_draw :: proc(lvl: ^LVL_Level, ren3d: ^GFX_3D_Renderer, position: M_Vec2f32) {
+	clear(&lvl.drawn_sector_indices)
+	clear(&lvl.drawn_wall_indices)
+
+	chunk_coord := LVL_get_chunk_coord(position)
+	min_chunk_coord := chunk_coord - LVL_VISIBLE_CHUNK_RADIUS
+	max_chunk_coord := chunk_coord + LVL_VISIBLE_CHUNK_RADIUS
+
+	for y in min_chunk_coord.y..=max_chunk_coord.y {
+		for x in min_chunk_coord.x..=max_chunk_coord.x {
+			LVL_draw_chunk(lvl, ren3d, {x, y})
+		}
+	}
+}
+
+LVL_draw_chunk :: proc(lvl: ^LVL_Level, ren3d: ^GFX_3D_Renderer, chunk_coord: [2]int) {
+	chunk, chunk_ok := lvl.chunks[chunk_coord]
+	if !chunk_ok {
+		return
+	}
+
+	for sector_index in chunk.sector_indices {
+		if sector_index in lvl.drawn_sector_indices {
+			continue
+		}
+
+		lvl.drawn_sector_indices[sector_index] = 0
+
+		sector := lvl.sectors[sector_index]
+
 		x1 := sector.position.x
 		z1 := sector.position.y
 		x2 := sector.position.x + sector.size.x
@@ -73,8 +126,8 @@ LVL_draw :: proc(lvl: LVL_Level, ren3d: ^GFX_3D_Renderer) {
 		GFX_draw_3d_texture_tiled(
 			ren3d,
 			lvl.texture.texture, lvl.texture.sampler,
-			WORLD_UNIT_PER_TILE,
-			NUM_COLUMNS, NUM_ROWS,
+			LVL_UNIT_PER_TILE,
+			lvl.texture_num_cols, lvl.texture_num_rows,
 			floor_col, floor_row,
 			.Pos_Y,
 			{x1, sector.floor_y, z1}, M_COLOR_WHITE,
@@ -88,8 +141,8 @@ LVL_draw :: proc(lvl: LVL_Level, ren3d: ^GFX_3D_Renderer) {
 		GFX_draw_3d_texture_tiled(
 			ren3d,
 			lvl.texture.texture, lvl.texture.sampler,
-			WORLD_UNIT_PER_TILE,
-			NUM_COLUMNS, NUM_ROWS,
+			LVL_UNIT_PER_TILE,
+			lvl.texture_num_cols, lvl.texture_num_rows,
 			ceiling_col, ceiling_row,
 			.Neg_Y,
 			{x1, sector.ceiling_y, z2}, M_COLOR_WHITE,
@@ -99,7 +152,14 @@ LVL_draw :: proc(lvl: LVL_Level, ren3d: ^GFX_3D_Renderer) {
 		)
 	}
 
-	for wall in lvl.walls {
+	for wall_index in chunk.wall_indices {
+		if wall_index in lvl.drawn_wall_indices {
+			continue
+		}
+		lvl.drawn_wall_indices[wall_index] = 0
+
+		wall := lvl.walls[wall_index]
+
 		p1, p2, p3, p4: M_Vec3f32
 		facing: GFX_3D_Tile_Normal
 
@@ -137,8 +197,8 @@ LVL_draw :: proc(lvl: LVL_Level, ren3d: ^GFX_3D_Renderer) {
 		GFX_draw_3d_texture_tiled(
 			ren3d,
 			lvl.texture.texture, lvl.texture.sampler,
-			WORLD_UNIT_PER_TILE,
-			NUM_COLUMNS, NUM_ROWS,
+			LVL_UNIT_PER_TILE,
+			lvl.texture_num_cols, lvl.texture_num_rows,
 			col, row,
 			facing,
 			p1, M_COLOR_WHITE,
@@ -147,6 +207,40 @@ LVL_draw :: proc(lvl: LVL_Level, ren3d: ^GFX_3D_Renderer) {
 			p4, M_COLOR_WHITE,
 		)
 	}
+}
+
+LVL_get_chunk_coord :: proc(position: M_Vec2f32) -> [2]int {
+	position := position
+	if position.x < 0.0 {
+		position.x -= LVL_UNIT_PER_CHUNK
+	}
+	if position.y < 0.0 {
+		position.y -= LVL_UNIT_PER_CHUNK
+	}
+	chunk_f := position/LVL_UNIT_PER_CHUNK
+	return {int(chunk_f.x), int(chunk_f.y)}
+}
+
+LVL_get_chunk_coord_range :: proc(position, size: M_Vec2f32) -> (min, max: [2]int) {
+	min_coord := position
+	if min_coord.x < 0.0 {
+		min_coord.x += LVL_UNIT_PER_GRID
+	}
+	if min_coord.y < 0.0 {
+		min_coord.y += LVL_UNIT_PER_GRID
+	}
+	min = LVL_get_chunk_coord(min_coord)
+
+	max_coord := position + size
+	if max_coord.x >= 0.0 {
+		max_coord.x -= LVL_UNIT_PER_GRID
+	}
+	if max_coord.y >= 0.0 {
+		max_coord.y -= LVL_UNIT_PER_GRID
+	}
+	max = LVL_get_chunk_coord(max_coord) + 1
+
+	return
 }
 
 
