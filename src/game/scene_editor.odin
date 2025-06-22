@@ -1317,9 +1317,6 @@ _construct_level_preview :: proc() {
 				f32(min_pos.y),
 			}*LVL_UNIT_PER_GRID
 
-			// TODO: fix bug:
-			// when sector extends to east or south edge of the chunk
-			// the wall for that side doesn't get generated
 			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .North, wall_offset)
 			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .East,  wall_offset)
 			_construct_wall(&walls, x, y, curr_cell, neighbor_cells, .South, wall_offset)
@@ -1356,9 +1353,19 @@ _construct_level_preview :: proc() {
 	}
 
 	for wall, i in _ctx.level_preview.walls {
-		min_chunk_coord, max_chunk_coord := LVL_get_chunk_coord_range(wall.p1, linalg.abs(wall.p2 - wall.p1))
+		size := linalg.abs(wall.p2 - wall.p1)
+		if size.x == 0.0 {
+			size.x = LVL_UNIT_PER_GRID
+		}
+		if size.y == 0.0 {
+			size.y = LVL_UNIT_PER_GRID
+		}
+		min_chunk_coord, max_chunk_coord := LVL_get_chunk_coord_range(wall.p1, size)
 		for y in min_chunk_coord.y..<max_chunk_coord.y {
 			for x in min_chunk_coord.x..<max_chunk_coord.x {
+				if ([2]int{x, y}) not_in temp_chunks {
+					temp_chunks[{x, y}] = {}
+				}
 				temp_chunk := &temp_chunks[{x, y}]
 				append(&temp_chunk.wall_indices, i)
 			}
