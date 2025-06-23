@@ -1,3 +1,7 @@
+# DOING:
+	X export level
+	- player movement
+
 # system/engine
 	X window              [WND]
 	X input               [INP]
@@ -71,4 +75,4 @@
 	- undo/redo ??
 	- save level   (json format)
 	- load level   (json format)
-	- export level (into raw binary that don't need any processing when load)
+	X export level (into raw binary that don't need any processing when load)

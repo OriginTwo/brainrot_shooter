@@ -1,5 +1,6 @@
 package game
 
+import "core:os"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
@@ -25,6 +26,8 @@ _ctx: struct {
 	font: GFX_Font,
 	tex: sg.Image,
 	smp: sg.Sampler,
+
+	level: LVL_Level,
 
 	cam: GFX_Camera,
 
@@ -66,11 +69,25 @@ scn_game_init :: proc() {
 		GFX_unload_image(&img)
 	}
 
+	{
+		LVL_init(&_ctx.level)
+
+		data, data_ok := os.read_entire_file("exported_level.lvl")
+		if data_ok {
+			ser: SER_Serializer
+			SER_init_reader(&ser, data)
+			LVL_serialize(&_ctx.level, &ser)
+			delete(data)
+		}
+	}
+
 	_ctx.cam.position.y = 1.0
 	_ctx.cam.fovy = math.PI/2.0
 }
 
 scn_game_uninit :: proc() {
+	LVL_uninit(&_ctx.level)
+
 	sg.destroy_image(_ctx.tex)
 	GFX_unload_font(&_ctx.font)
 	GFX_destroy_2d_renderer(&_ctx.ren2d)
@@ -134,80 +151,86 @@ scn_game_draw :: proc(alpha: f32) {
 
 	GFX_begin_3d_renderer(&_ctx.ren3d, _ctx.cam)
 
-	GFX_draw_3d_rect(
+	LVL_draw(
+		&_ctx.level,
 		&_ctx.ren3d,
-		{-100.0, -1.0, -100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{ 100.0, -1.0, -100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{ 100.0, -1.0,  100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{-100.0, -1.0,  100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{_ctx.cam.position.x, _ctx.cam.position.z},
 	)
 
-	GFX_draw_3d_billboard_triangle(
-		&_ctx.ren3d,
-		{ 0.0,  1.0, -5.0}, {255, 0, 0, 255},
-		{ 1.0, -1.0, -5.0}, {0, 0, 255, 255},
-		{-1.0, -1.0, -5.0}, {0, 255, 0, 255},
-		false,
-	)
+	// GFX_draw_3d_rect(
+	// 	&_ctx.ren3d,
+	// 	{-100.0, -1.0, -100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+	// 	{ 100.0, -1.0, -100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+	// 	{ 100.0, -1.0,  100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+	// 	{-100.0, -1.0,  100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+	// )
 
-	GFX_draw_3d_billboard_triangle(
-		&_ctx.ren3d,
-		{2.0,  1.0, -5.0}, {255, 0, 0, 255},
-		{3.0, -1.0, -5.0}, {0, 0, 255, 255},
-		{1.0, -1.0, -5.0}, {0, 255, 0, 255},
-		true,
-	)
+	// GFX_draw_3d_billboard_triangle(
+	// 	&_ctx.ren3d,
+	// 	{ 0.0,  1.0, -5.0}, {255, 0, 0, 255},
+	// 	{ 1.0, -1.0, -5.0}, {0, 0, 255, 255},
+	// 	{-1.0, -1.0, -5.0}, {0, 255, 0, 255},
+	// 	false,
+	// )
 
-	GFX_draw_3d_billboard_rect(
-		&_ctx.ren3d,
-		{0.0, 2.0, -5.0},
-		{2.0, 2.0},
-		{200, 40, 40, 255},
-		false,
-	)
+	// GFX_draw_3d_billboard_triangle(
+	// 	&_ctx.ren3d,
+	// 	{2.0,  1.0, -5.0}, {255, 0, 0, 255},
+	// 	{3.0, -1.0, -5.0}, {0, 0, 255, 255},
+	// 	{1.0, -1.0, -5.0}, {0, 255, 0, 255},
+	// 	true,
+	// )
 
-	GFX_draw_3d_billboard_rect(
-		&_ctx.ren3d,
-		{2.0, 2.0, -5.0},
-		{1.0, 2.0},
-		{200, 40, 40, 255},
-		true,
-	)
+	// GFX_draw_3d_billboard_rect(
+	// 	&_ctx.ren3d,
+	// 	{0.0, 2.0, -5.0},
+	// 	{2.0, 2.0},
+	// 	{200, 40, 40, 255},
+	// 	false,
+	// )
 
-	GFX_draw_3d_billboard_texture(
-		&_ctx.ren3d,
-		_ctx.tex,
-		_ctx.smp,
-		{0.0, 4.0, -5.0},
-		{2.0, 2.0},
-		{0.0, 0.0, 1920.0, 1080.0},
-		{255, 255, 255, 255},
-		false,
-	)
+	// GFX_draw_3d_billboard_rect(
+	// 	&_ctx.ren3d,
+	// 	{2.0, 2.0, -5.0},
+	// 	{1.0, 2.0},
+	// 	{200, 40, 40, 255},
+	// 	true,
+	// )
 
-	GFX_draw_3d_billboard_texture(
-		&_ctx.ren3d,
-		_ctx.tex,
-		_ctx.smp,
-		{2.0, 4.0, -5.0},
-		{1.0, 2.0},
-		{800.0, 500.0, 1000.0, 500.0},
-		{255, 255, 255, 255},
-		true,
-	)
+	// GFX_draw_3d_billboard_texture(
+	// 	&_ctx.ren3d,
+	// 	_ctx.tex,
+	// 	_ctx.smp,
+	// 	{0.0, 4.0, -5.0},
+	// 	{2.0, 2.0},
+	// 	{0.0, 0.0, 1920.0, 1080.0},
+	// 	{255, 255, 255, 255},
+	// 	false,
+	// )
 
-	GFX_draw_3d_decal_texture(
-		&_ctx.ren3d,
-		_ctx.tex,
-		_ctx.smp,
-		{-10.0, -1.0, -10.0},
-		{ 10.0, -1.0, -10.0},
-		{ 10.0, -1.0,  10.0},
-		{-10.0, -1.0,  10.0},
-		{0.0, 1.0, 0.0},
-		{800.0, 500.0, 1000.0, 500.0},
-		{255, 255, 255, 255},
-	)
+	// GFX_draw_3d_billboard_texture(
+	// 	&_ctx.ren3d,
+	// 	_ctx.tex,
+	// 	_ctx.smp,
+	// 	{2.0, 4.0, -5.0},
+	// 	{1.0, 2.0},
+	// 	{800.0, 500.0, 1000.0, 500.0},
+	// 	{255, 255, 255, 255},
+	// 	true,
+	// )
+
+	// GFX_draw_3d_decal_texture(
+	// 	&_ctx.ren3d,
+	// 	_ctx.tex,
+	// 	_ctx.smp,
+	// 	{-10.0, -1.0, -10.0},
+	// 	{ 10.0, -1.0, -10.0},
+	// 	{ 10.0, -1.0,  10.0},
+	// 	{-10.0, -1.0,  10.0},
+	// 	{0.0, 1.0, 0.0},
+	// 	{800.0, 500.0, 1000.0, 500.0},
+	// 	{255, 255, 255, 255},
+	// )
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = {-3.0, 1.5, -2.0},

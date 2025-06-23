@@ -1,5 +1,6 @@
 package game
 
+import "core:os"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
@@ -180,6 +181,35 @@ scn_editor_draw :: proc(alpha: f32) {
 	im.SetNextWindowPos(_MAIN_UI_WINDOW_POSITION, .FirstUseEver)
 	im.SetNextWindowSize({300.0, 300.0}, .FirstUseEver)
 	im.Begin("MAIN")
+
+	// TODO: save current level path
+	// TODO: save current level export path
+	// TODO: display current level path (if exist)
+	// TODO: display current level export path (if exist)
+
+	if im.Button("LOAD###LOAD_LEVEL") {
+		fmt.println("load level")
+	}
+	im.SameLine(spacing = SPACING)
+
+	if im.Button("SAVE###SAVE_LEVEL") {
+		fmt.println("save level")
+	}
+	im.SameLine(spacing = SPACING)
+
+	if im.Button("SAVE_AS###SAVE_LEVEL_AS") {
+		fmt.println("save level as")
+	}
+	im.SameLine(spacing = SPACING)
+
+	if im.Button("EXPORT###EXPORT_LEVEL") {
+		ser: SER_Serializer
+		SER_init_writer(&ser, 4096)
+		LVL_serialize(&_ctx.level_preview, &ser)
+		os.write_entire_file("exported_level.lvl", SER_to_bytes(ser))
+		SER_uninit_writer(&ser)
+	}
+
 	im.Checkbox("3D_VIEW", &_ctx.is_3d_view)
 
 	{
@@ -315,7 +345,15 @@ _tick_2d_view :: proc(input: INP_State, delta: f32) {
 		hovering_sector_handle := _INVALID_SECTOR_HANDLE
 		hovering_sector_area := _MAX_SECTOR_GRID_COORD*_MAX_SECTOR_GRID_COORD
 
-		chunk_coord := _get_chunk_coord(_ctx.grid_mouse_pos)
+		mp := _ctx.grid_mouse_pos
+		if mp.x < 0 {
+			mp.x += 1
+		}
+		if mp.y < 0 {
+			mp.y += 1
+		}
+		chunk_coord := _get_chunk_coord(mp)
+
 		chunk, chunk_ok := _ctx.level.chunks[chunk_coord]
 		if chunk_ok {
 			for handle in chunk {
@@ -904,10 +942,10 @@ _get_chunk_coord :: proc(position: [2]int) -> [2]int {
 @(private="file")
 _get_chunk_coord_range :: proc(position, size: [2]int) -> (min, max: [2]int) {
 	min_coord := position
-	if min_coord.x < 0 {
+	if min_coord.x < -1 {
 		min_coord.x += 1
 	}
-	if min_coord.y < 0 {
+	if min_coord.y < -1 {
 		min_coord.y += 1
 	}
 	min = _get_chunk_coord(min_coord)

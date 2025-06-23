@@ -86,6 +86,12 @@ LVL_uninit :: proc(lvl: ^LVL_Level) {
 	lvl^ = {}
 }
 
+LVL_serialize :: proc(lvl: ^LVL_Level, ser: ^SER_Serializer) {
+	SER_serialize_custom_slice(ser, &lvl.sectors, LVL__serialize_sector)
+	SER_serialize_custom_slice(ser, &lvl.walls, LVL__serialize_wall)
+	SER_serialize_custom_map(ser, &lvl.chunks, LVL__serialize_chunk_coord, LVL__serialize_chunk)
+}
+
 LVL_draw :: proc(lvl: ^LVL_Level, ren3d: ^GFX_3D_Renderer, position: M_Vec2f32) {
 	clear(&lvl.drawn_sector_indices)
 	clear(&lvl.drawn_wall_indices)
@@ -254,4 +260,39 @@ LVL__get_texture_column_and_row_from_id :: proc(id: LVL_Texture_ID) -> (col, row
 	case .Brick:   row = 1; col = 0
 	}
 	return
+}
+
+@(private="file")
+LVL__serialize_sector :: proc(s: ^SER_Serializer, data: rawptr, loc := #caller_location) {
+	sector := cast(^LVL_Sector)data
+	SER_serialize(s, &sector.position, loc)
+	SER_serialize(s, &sector.size, loc)
+	SER_serialize(s, &sector.floor_y, loc)
+	SER_serialize(s, &sector.ceiling_y, loc)
+	SER_serialize(s, &sector.floor_texture_id, loc)
+	SER_serialize(s, &sector.ceiling_texture_id, loc)
+}
+
+@(private="file")
+LVL__serialize_wall :: proc(s: ^SER_Serializer, data: rawptr, loc := #caller_location) {
+	wall := cast(^LVL_Wall)data
+	SER_serialize(s, &wall.p1, loc)
+	SER_serialize(s, &wall.p2, loc)
+	SER_serialize(s, &wall.facing, loc)
+	SER_serialize(s, &wall.y, loc)
+	SER_serialize(s, &wall.height, loc)
+	SER_serialize(s, &wall.texture_id, loc)
+}
+
+@(private="file")
+LVL__serialize_chunk_coord :: proc(s: ^SER_Serializer, data: rawptr, loc := #caller_location) {
+	coord := cast(^[2]int)data
+	SER_serialize(s, coord, loc)
+}
+
+@(private="file")
+LVL__serialize_chunk :: proc(s: ^SER_Serializer, data: rawptr, loc := #caller_location) {
+	chunk := cast(^LVL_Chunk)data
+	SER_serialize(s, &chunk.sector_indices, loc)
+	SER_serialize(s, &chunk.wall_indices, loc)
 }
