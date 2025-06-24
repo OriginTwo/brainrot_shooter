@@ -18,6 +18,9 @@ SCN_GAME_CALLBACKS :: SCN_Callbacks{
 	scn_game_draw,
 }
 
+@(private="file") _PLAYER_WIDTH :: 1.0
+@(private="file") _PLAYER_HEIGHT :: 1.6
+
 @(private="file")
 _ctx: struct {
 	ren2d: GFX_2D_Renderer,
@@ -30,6 +33,9 @@ _ctx: struct {
 	level: LVL_Level,
 
 	cam: GFX_Camera,
+	desired_cam_y: f32,
+	cam_vel_y: f32,
+	prev_floor_y: f32,
 
 	disable_bloom: bool,
 }
@@ -126,6 +132,8 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	_ctx.cam.yaw = math.mod(_ctx.cam.yaw, 360.0)
 
 	forward, _, right := GFX_get_camera_forward_up_right(_ctx.cam)
+	forward.y = 0.0
+	right.y = 0.0
 	mov_vec: M_Vec3f32
 	if INP_is_key_down(input, .W) {mov_vec -= forward}
 	if INP_is_key_down(input, .S) {mov_vec += forward}
@@ -134,6 +142,95 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	mov_vec = linalg.normalize0(mov_vec)
 	mov_vec *= 8.0*delta
 	_ctx.cam.position += mov_vec
+
+	chunk_coord := LVL_get_chunk_coord({_ctx.cam.position.x, _ctx.cam.position.z})
+	chunk, chunk_ok := _ctx.level.chunks[chunk_coord]
+	if chunk_ok {
+		curr_sector_index: int
+		smallest_area: f32 = 99999.0
+
+		for sector_index in chunk.sector_indices {
+			sector := _ctx.level.sectors[sector_index]
+
+			if (sector.position.x <= _ctx.cam.position.x && _ctx.cam.position.x < sector.position.x + sector.size.x) &&
+				(sector.position.y <= _ctx.cam.position.z && _ctx.cam.position.z < sector.position.y + sector.size.y)
+			{
+				area := sector.size.x*sector.size.y
+				if area < smallest_area {
+					curr_sector_index = sector_index
+					smallest_area = area
+				}
+			}
+		}
+
+		floor_y := _ctx.level.sectors[curr_sector_index].floor_y
+		ceiling_y := _ctx.level.sectors[curr_sector_index].ceiling_y
+
+		for wall_index in chunk.wall_indices {
+			wall := _ctx.level.walls[wall_index]
+			if wall.height <= 0.5 || wall.y + wall.height <= _ctx.cam.position.y - _PLAYER_HEIGHT || wall.y >= _ctx.cam.position.y {
+				continue
+			}
+
+			switch wall.facing {
+			case .North:
+				is_x_in_range := wall.p1.x <= _ctx.cam.position.x && _ctx.cam.position.x <= wall.p2.x
+				dist_y := wall.p1.y - _ctx.cam.position.z
+
+				if is_x_in_range && (0.0 < dist_y && dist_y < _PLAYER_WIDTH/2.0) {
+					_ctx.cam.position.z = wall.p1.y - _PLAYER_WIDTH/2.0
+				}
+
+			case .East:
+				is_z_in_range := wall.p1.y <= _ctx.cam.position.z && _ctx.cam.position.z <= wall.p2.y
+				dist_x := wall.p1.x - _ctx.cam.position.x
+
+				if is_z_in_range && (-_PLAYER_WIDTH/2.0 < dist_x && dist_x < 0.0) {
+					_ctx.cam.position.x = wall.p1.x + _PLAYER_WIDTH/2.0
+				}
+
+			case .South:
+				is_x_in_range := wall.p1.x <= _ctx.cam.position.x && _ctx.cam.position.x <= wall.p2.x
+				dist_y := wall.p1.y - _ctx.cam.position.z
+
+				if is_x_in_range && (-_PLAYER_WIDTH/2.0 < dist_y && dist_y < 0.0) {
+					_ctx.cam.position.z = wall.p1.y + _PLAYER_WIDTH/2.0
+				}
+
+			case .West:
+				is_z_in_range := wall.p1.y <= _ctx.cam.position.z && _ctx.cam.position.z <= wall.p2.y
+				dist_x := wall.p1.x - _ctx.cam.position.x
+
+				if is_z_in_range && (0.0 < dist_x && dist_x < _PLAYER_WIDTH/2.0) {
+					_ctx.cam.position.x = wall.p1.x - _PLAYER_WIDTH/2.0
+				}
+			}
+		}
+
+		if _ctx.desired_cam_y > floor_y + _PLAYER_HEIGHT {
+			if _ctx.cam_vel_y >= 0.0 {
+				_ctx.cam_vel_y -= 120.0*delta
+			} else {
+				_ctx.cam_vel_y -= 140.0*delta
+			}
+		} else {
+			if floor_y - _ctx.prev_floor_y < 0.5 {
+				_ctx.desired_cam_y = floor_y + _PLAYER_HEIGHT
+				_ctx.cam_vel_y = 0.0
+			}
+
+			if INP_is_key_pressed(input, .SPACE) {
+				_ctx.cam_vel_y = 22.0
+			}
+		}
+
+		_ctx.prev_floor_y = floor_y
+		_ctx.desired_cam_y += _ctx.cam_vel_y*delta
+		if _ctx.desired_cam_y > ceiling_y {
+			_ctx.desired_cam_y = ceiling_y
+		}
+		_ctx.cam.position.y += (_ctx.desired_cam_y - _ctx.cam.position.y)*10.0*delta
+	}
 
 	@(static) bob_t: f32
 	if mov_vec != {} {
@@ -156,81 +253,6 @@ scn_game_draw :: proc(alpha: f32) {
 		&_ctx.ren3d,
 		{_ctx.cam.position.x, _ctx.cam.position.z},
 	)
-
-	// GFX_draw_3d_rect(
-	// 	&_ctx.ren3d,
-	// 	{-100.0, -1.0, -100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-	// 	{ 100.0, -1.0, -100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-	// 	{ 100.0, -1.0,  100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-	// 	{-100.0, -1.0,  100.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-	// )
-
-	// GFX_draw_3d_billboard_triangle(
-	// 	&_ctx.ren3d,
-	// 	{ 0.0,  1.0, -5.0}, {255, 0, 0, 255},
-	// 	{ 1.0, -1.0, -5.0}, {0, 0, 255, 255},
-	// 	{-1.0, -1.0, -5.0}, {0, 255, 0, 255},
-	// 	false,
-	// )
-
-	// GFX_draw_3d_billboard_triangle(
-	// 	&_ctx.ren3d,
-	// 	{2.0,  1.0, -5.0}, {255, 0, 0, 255},
-	// 	{3.0, -1.0, -5.0}, {0, 0, 255, 255},
-	// 	{1.0, -1.0, -5.0}, {0, 255, 0, 255},
-	// 	true,
-	// )
-
-	// GFX_draw_3d_billboard_rect(
-	// 	&_ctx.ren3d,
-	// 	{0.0, 2.0, -5.0},
-	// 	{2.0, 2.0},
-	// 	{200, 40, 40, 255},
-	// 	false,
-	// )
-
-	// GFX_draw_3d_billboard_rect(
-	// 	&_ctx.ren3d,
-	// 	{2.0, 2.0, -5.0},
-	// 	{1.0, 2.0},
-	// 	{200, 40, 40, 255},
-	// 	true,
-	// )
-
-	// GFX_draw_3d_billboard_texture(
-	// 	&_ctx.ren3d,
-	// 	_ctx.tex,
-	// 	_ctx.smp,
-	// 	{0.0, 4.0, -5.0},
-	// 	{2.0, 2.0},
-	// 	{0.0, 0.0, 1920.0, 1080.0},
-	// 	{255, 255, 255, 255},
-	// 	false,
-	// )
-
-	// GFX_draw_3d_billboard_texture(
-	// 	&_ctx.ren3d,
-	// 	_ctx.tex,
-	// 	_ctx.smp,
-	// 	{2.0, 4.0, -5.0},
-	// 	{1.0, 2.0},
-	// 	{800.0, 500.0, 1000.0, 500.0},
-	// 	{255, 255, 255, 255},
-	// 	true,
-	// )
-
-	// GFX_draw_3d_decal_texture(
-	// 	&_ctx.ren3d,
-	// 	_ctx.tex,
-	// 	_ctx.smp,
-	// 	{-10.0, -1.0, -10.0},
-	// 	{ 10.0, -1.0, -10.0},
-	// 	{ 10.0, -1.0,  10.0},
-	// 	{-10.0, -1.0,  10.0},
-	// 	{0.0, 1.0, 0.0},
-	// 	{800.0, 500.0, 1000.0, 500.0},
-	// 	{255, 255, 255, 255},
-	// )
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = {-3.0, 1.5, -2.0},

@@ -1,6 +1,9 @@
 # DOING:
 	X export level
-	- player movement
+	X player movement
+		- tweak player jump parameter
+		- coyote timer
+	- lights can go through walls, maybe should use minecraft's lighting method
 
 # system/engine
 	X window              [WND]

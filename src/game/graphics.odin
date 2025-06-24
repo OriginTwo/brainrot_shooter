@@ -1210,7 +1210,7 @@ GFX_begin_3d_renderer :: proc(ren: ^GFX_3D_Renderer, cam: GFX_Camera) {
 	ren.camera = cam
 	ren.view_mat = GFX_get_camera_matrix(ren.camera)
 	// TODO: unhard-code aspect ratio
-	ren.proj_mat = linalg.matrix4_perspective_f32(ren.camera.fovy, 16.0/9.0, 0.3, 100.0)
+	ren.proj_mat = linalg.matrix4_perspective_f32(ren.camera.fovy, 16.0/9.0, 0.1, 100.0)
 }
 
 GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
