@@ -4,6 +4,7 @@ import "core:os"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
+import "core:math/ease"
 
 import sdl "vendor:sdl3"
 
@@ -36,6 +37,9 @@ _ctx: struct {
 	desired_cam_y: f32,
 	cam_vel_y: f32,
 	prev_floor_y: f32,
+	land_time: f32,
+	play_land_anim: bool,
+	land_anim_max_offset: f32,
 
 	disable_bloom: bool,
 }
@@ -220,17 +224,27 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 		}
 
 		if _ctx.desired_cam_y > highest_floor_y + _PLAYER_HEIGHT {
+			_ctx.land_time = 0.0
+			_ctx.play_land_anim = false
+
 			if _ctx.cam_vel_y >= 0.0 {
-				_ctx.cam_vel_y -= 120.0*delta
+				_ctx.cam_vel_y -= 90.0*delta
 			} else {
-				_ctx.cam_vel_y -= 140.0*delta
+				_ctx.cam_vel_y -= 120.0*delta
 			}
 		} else {
-			_ctx.cam_vel_y = 0.0
+			if _ctx.cam_vel_y < -20.0 {
+				_ctx.play_land_anim = true
+				_ctx.land_anim_max_offset = abs(_ctx.cam_vel_y)/160.0
+			}
+
+			_ctx.land_time += delta
+
+			_ctx.cam_vel_y = -1.0*delta
 			_ctx.desired_cam_y = highest_floor_y + _PLAYER_HEIGHT
 
 			if INP_is_key_pressed(input, .SPACE) {
-				_ctx.cam_vel_y = 22.0
+				_ctx.cam_vel_y = 18.0
 			}
 		}
 
@@ -240,7 +254,7 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 			_ctx.desired_cam_y = lowest_ceiling_y
 			_ctx.cam_vel_y = 0.0
 		}
-		_ctx.cam.position.y += (_ctx.desired_cam_y - _ctx.cam.position.y)*10.0*delta
+		_ctx.cam.position.y += (_ctx.desired_cam_y - _ctx.cam.position.y)*20.0*delta
 	}
 
 	@(static) bob_t: f32
@@ -251,6 +265,19 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	}
 	bob_t = clamp(bob_t, 0.0, 1.0)
 	_ctx.cam.offset.y = 0.06*bob_t*math.sin(f32(TIME_now())*14.0)
+
+	if _ctx.play_land_anim {
+		LAND_TIME :: 0.4
+		if _ctx.land_time <= LAND_TIME/2.0 {
+			t := _ctx.land_time
+			_ctx.cam.offset.y -= ease.cubic_out(t/(LAND_TIME/2.0))*_ctx.land_anim_max_offset
+		} else if _ctx.land_time <= LAND_TIME {
+			t := LAND_TIME/2.0 - (_ctx.land_time - LAND_TIME/2.0)
+			_ctx.cam.offset.y -= ease.cubic_in_out(t/(LAND_TIME/2.0))*_ctx.land_anim_max_offset
+		} else {
+			_ctx.play_land_anim = false
+		}
+	}
 }
 
 scn_game_draw :: proc(alpha: f32) {
