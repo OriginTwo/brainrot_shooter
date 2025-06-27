@@ -146,29 +146,13 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	chunk_coord := LVL_get_chunk_coord({_ctx.cam.position.x, _ctx.cam.position.z})
 	chunk, chunk_ok := _ctx.level.chunks[chunk_coord]
 	if chunk_ok {
-		curr_sector_index: int
-		smallest_area: f32 = 99999.0
-
-		for sector_index in chunk.sector_indices {
-			sector := _ctx.level.sectors[sector_index]
-
-			if (sector.position.x <= _ctx.cam.position.x && _ctx.cam.position.x < sector.position.x + sector.size.x) &&
-				(sector.position.y <= _ctx.cam.position.z && _ctx.cam.position.z < sector.position.y + sector.size.y)
-			{
-				area := sector.size.x*sector.size.y
-				if area < smallest_area {
-					curr_sector_index = sector_index
-					smallest_area = area
-				}
-			}
-		}
-
-		floor_y := _ctx.level.sectors[curr_sector_index].floor_y
-		ceiling_y := _ctx.level.sectors[curr_sector_index].ceiling_y
-
 		for wall_index in chunk.wall_indices {
 			wall := _ctx.level.walls[wall_index]
-			if wall.height <= 0.5 || wall.y + wall.height <= _ctx.cam.position.y - _PLAYER_HEIGHT || wall.y >= _ctx.cam.position.y {
+			relative_wall_height := (wall.y + wall.height) - (_ctx.cam.position.y - _PLAYER_HEIGHT)
+			if (0.0 <= relative_wall_height && relative_wall_height <= 0.55) || // 0.55 for rounding error
+				wall.y + wall.height <= _ctx.cam.position.y - _PLAYER_HEIGHT || // top of the wall is below player's feet
+				wall.y >= _ctx.cam.position.y                                   // bottom of the wall is above player's head
+			{
 				continue
 			}
 
@@ -207,27 +191,54 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 			}
 		}
 
-		if _ctx.desired_cam_y > floor_y + _PLAYER_HEIGHT {
+		highest_floor_y := -math.INF_F32
+		lowest_ceiling_y := math.INF_F32
+
+		for sector_index in chunk.sector_indices {
+			sector := _ctx.level.sectors[sector_index]
+
+			player_x_range := _ctx.cam.position.x + M_Vec2f32{-_PLAYER_WIDTH, _PLAYER_WIDTH}/2.0
+			player_z_range := _ctx.cam.position.z + M_Vec2f32{-_PLAYER_WIDTH, _PLAYER_WIDTH}/2.0
+
+			sector_x_range := M_Vec2f32{sector.position.x, sector.position.x + sector.size.x}
+			sector_z_range := M_Vec2f32{sector.position.y, sector.position.y + sector.size.y}
+
+			overlap_x_range := M_Vec2f32{max(player_x_range[0], sector_x_range[0]), min(player_x_range[1], sector_x_range[1])}
+			overlap_z_range := M_Vec2f32{max(player_z_range[0], sector_z_range[0]), min(player_z_range[1], sector_z_range[1])}
+
+			overlap_x_amount := overlap_x_range[1] - overlap_x_range[0] if overlap_x_range[1] > overlap_x_range[0] else 0.0
+			overlap_z_amount := overlap_z_range[1] - overlap_z_range[0] if overlap_z_range[1] > overlap_z_range[0] else 0.0
+
+			if overlap_x_amount*overlap_z_amount > 0.0 {
+				if sector.floor_y > highest_floor_y {
+					highest_floor_y = sector.floor_y
+				}
+				if sector.ceiling_y < lowest_ceiling_y {
+					lowest_ceiling_y = sector.ceiling_y
+				}
+			}
+		}
+
+		if _ctx.desired_cam_y > highest_floor_y + _PLAYER_HEIGHT {
 			if _ctx.cam_vel_y >= 0.0 {
 				_ctx.cam_vel_y -= 120.0*delta
 			} else {
 				_ctx.cam_vel_y -= 140.0*delta
 			}
 		} else {
-			if floor_y - _ctx.prev_floor_y < 0.5 {
-				_ctx.desired_cam_y = floor_y + _PLAYER_HEIGHT
-				_ctx.cam_vel_y = 0.0
-			}
+			_ctx.cam_vel_y = 0.0
+			_ctx.desired_cam_y = highest_floor_y + _PLAYER_HEIGHT
 
 			if INP_is_key_pressed(input, .SPACE) {
 				_ctx.cam_vel_y = 22.0
 			}
 		}
 
-		_ctx.prev_floor_y = floor_y
+		_ctx.prev_floor_y = highest_floor_y
 		_ctx.desired_cam_y += _ctx.cam_vel_y*delta
-		if _ctx.desired_cam_y > ceiling_y {
-			_ctx.desired_cam_y = ceiling_y
+		if _ctx.desired_cam_y > lowest_ceiling_y {
+			_ctx.desired_cam_y = lowest_ceiling_y
+			_ctx.cam_vel_y = 0.0
 		}
 		_ctx.cam.position.y += (_ctx.desired_cam_y - _ctx.cam.position.y)*10.0*delta
 	}
