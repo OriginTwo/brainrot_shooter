@@ -100,9 +100,17 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 				continue
 			}
 
+			player_range := M_Range2f32{
+				min = _ctx.player.desired_position.xz - _PLAYER_WIDTH/2.0,
+				max = _ctx.player.desired_position.xz + _PLAYER_WIDTH/2.0,
+			}
+			wall_range := M_Range2f32{wall.p1, wall.p2}
+			overlap_dimension := M_range2f32_dimension(M_range2f32_intersect(player_range, wall_range))
+			is_x_in_range := overlap_dimension.x > 0.0
+			is_z_in_range := overlap_dimension.y > 0.0
+
 			switch wall.facing {
 			case .North:
-				is_x_in_range := wall.p1.x <= _ctx.player.desired_position.x && _ctx.player.desired_position.x <= wall.p2.x
 				dist_y := wall.p1.y - _ctx.player.desired_position.z
 
 				if is_x_in_range && (0.0 < dist_y && dist_y < _PLAYER_WIDTH/2.0) {
@@ -110,7 +118,6 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 				}
 
 			case .East:
-				is_z_in_range := wall.p1.y <= _ctx.player.desired_position.z && _ctx.player.desired_position.z <= wall.p2.y
 				dist_x := wall.p1.x - _ctx.player.desired_position.x
 
 				if is_z_in_range && (-_PLAYER_WIDTH/2.0 < dist_x && dist_x < 0.0) {
@@ -118,7 +125,6 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 				}
 
 			case .South:
-				is_x_in_range := wall.p1.x <= _ctx.player.desired_position.x && _ctx.player.desired_position.x <= wall.p2.x
 				dist_y := wall.p1.y - _ctx.player.desired_position.z
 
 				if is_x_in_range && (-_PLAYER_WIDTH/2.0 < dist_y && dist_y < 0.0) {
@@ -126,7 +132,6 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 				}
 
 			case .West:
-				is_z_in_range := wall.p1.y <= _ctx.player.desired_position.z && _ctx.player.desired_position.z <= wall.p2.y
 				dist_x := wall.p1.x - _ctx.player.desired_position.x
 
 				if is_z_in_range && (0.0 < dist_x && dist_x < _PLAYER_WIDTH/2.0) {
@@ -141,19 +146,19 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 		for sector_index in chunk.sector_indices {
 			sector := _ctx.level.sectors[sector_index]
 
-			player_x_range := _ctx.player.desired_position.x + M_Vec2f32{-_PLAYER_WIDTH, _PLAYER_WIDTH}/2.0
-			player_z_range := _ctx.player.desired_position.z + M_Vec2f32{-_PLAYER_WIDTH, _PLAYER_WIDTH}/2.0
+			player_range := M_Range2f32{
+				min = _ctx.player.desired_position.xz - _PLAYER_WIDTH/2.0,
+				max = _ctx.player.desired_position.xz + _PLAYER_WIDTH/2.0,
+			}
 
-			sector_x_range := M_Vec2f32{sector.position.x, sector.position.x + sector.size.x}
-			sector_z_range := M_Vec2f32{sector.position.y, sector.position.y + sector.size.y}
+			sector_range := M_Range2f32{
+				min = sector.position,
+				max = sector.position + sector.size,
+			}
 
-			overlap_x_range := M_Vec2f32{max(player_x_range[0], sector_x_range[0]), min(player_x_range[1], sector_x_range[1])}
-			overlap_z_range := M_Vec2f32{max(player_z_range[0], sector_z_range[0]), min(player_z_range[1], sector_z_range[1])}
+			overlap_amount := M_range2f32_dimension(M_range2f32_intersect(player_range, sector_range))
 
-			overlap_x_amount := overlap_x_range[1] - overlap_x_range[0] if overlap_x_range[1] > overlap_x_range[0] else 0.0
-			overlap_z_amount := overlap_z_range[1] - overlap_z_range[0] if overlap_z_range[1] > overlap_z_range[0] else 0.0
-
-			if overlap_x_amount*overlap_z_amount > 0.0 {
+			if overlap_amount.x*overlap_amount.y > 0.0 {
 				if sector.floor_y > highest_floor_y {
 					highest_floor_y = sector.floor_y
 				}

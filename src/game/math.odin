@@ -3,20 +3,6 @@ package game
 import "core:math"
 import "core:math/linalg"
 
-M_Vec2f32 :: [2]f32
-M_Vec3f32 :: [3]f32
-M_Vec4f32 :: [4]f32
-
-M_Color :: distinct [4]u8
-M_FColor :: distinct [4]f32
-
-M_Rect :: struct {
-	x: f32,
-	y: f32,
-	width: f32,
-	height: f32,
-}
-
 M_COLOR_BLANK   :: M_Color{  0,   0,   0,   0}
 M_COLOR_BLACK   :: M_Color{  0,   0,   0, 255}
 M_COLOR_WHITE   :: M_Color{255, 255, 255, 255}
@@ -37,6 +23,30 @@ M_FCOLOR_YELLOW  :: M_FColor{1.0, 1.0, 0.0, 1.0}
 M_FCOLOR_MAGENTA :: M_FColor{1.0, 0.0, 1.0, 1.0}
 M_FCOLOR_CYAN    :: M_FColor{0.0, 1.0, 1.0, 1.0}
 
+M_Vec2f32 :: [2]f32
+M_Vec3f32 :: [3]f32
+M_Vec4f32 :: [4]f32
+
+M_Color :: distinct [4]u8
+M_FColor :: distinct [4]f32
+
+M_Rect :: struct {
+	x: f32,
+	y: f32,
+	width: f32,
+	height: f32,
+}
+
+M_Range1f32 :: struct {
+	min: f32,
+	max: f32,
+}
+
+M_Range2f32 :: struct {
+	min: M_Vec2f32,
+	max: M_Vec2f32,
+}
+
 M_make_vec4f32_from_vec2f32 :: #force_inline proc(v: M_Vec2f32, a, b: f32) -> M_Vec4f32 {
 	return {v.x, v.y, a, b}
 }
@@ -52,6 +62,31 @@ M_make_vec4f32 :: proc {
 
 M_is_equal_approx :: proc(a, b: f32, margin: f32 = math.F32_EPSILON) -> bool {
 	return abs(a - b) <= margin
+}
+
+M_range1f32_intersect :: proc(a, b: M_Range1f32) -> M_Range1f32 {
+	return {
+		max(a.min, b.min),
+		min(a.max, b.max),
+	}
+}
+
+M_range1f32_dimension :: proc(r: M_Range1f32) -> f32 {
+	return r.max - r.min if r.max > r.min else 0.0
+}
+
+M_range2f32_intersect :: proc(a, b: M_Range2f32) -> M_Range2f32 {
+	return {
+		{max(a.min.x, b.min.x), max(a.min.y, b.min.y)},
+		{min(a.max.x, b.max.x), min(a.max.y, b.max.y)},
+	}
+}
+
+M_range2f32_dimension :: proc(r: M_Range2f32) -> M_Vec2f32 {
+	return {
+		r.max.x - r.min.x if r.max.x > r.min.x else 0.0,
+		r.max.y - r.min.y if r.max.y > r.min.y else 0.0,
+	}
 }
 
 M_minmax :: proc(a, b: f32) -> (min_val, max_val: f32) {
