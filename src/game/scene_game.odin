@@ -228,14 +228,14 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 			_ctx.play_land_anim = false
 
 			if _ctx.cam_vel_y >= 0.0 {
-				_ctx.cam_vel_y -= 90.0*delta
+				_ctx.cam_vel_y -= 65.0*delta
 			} else {
-				_ctx.cam_vel_y -= 120.0*delta
+				_ctx.cam_vel_y -= 100.0*delta
 			}
 		} else {
 			if _ctx.cam_vel_y < -20.0 {
 				_ctx.play_land_anim = true
-				_ctx.land_anim_max_offset = abs(_ctx.cam_vel_y)/160.0
+				_ctx.land_anim_max_offset = abs(_ctx.cam_vel_y)/140.0
 			}
 
 			_ctx.land_time += delta
@@ -244,7 +244,7 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 			_ctx.desired_cam_y = highest_floor_y + _PLAYER_HEIGHT
 
 			if INP_is_key_pressed(input, .SPACE) {
-				_ctx.cam_vel_y = 18.0
+				_ctx.cam_vel_y = 16.0
 			}
 		}
 
@@ -264,7 +264,7 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 		bob_t -= delta*4.0
 	}
 	bob_t = clamp(bob_t, 0.0, 1.0)
-	_ctx.cam.offset.y = 0.06*bob_t*math.sin(f32(TIME_now())*14.0)
+	_ctx.cam.offset.y = 0.1*bob_t*math.sin(f32(TIME_now())*14.0)
 
 	if _ctx.play_land_anim {
 		LAND_TIME :: 0.4
