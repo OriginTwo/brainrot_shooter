@@ -1,9 +1,11 @@
 # DOING:
+	- lights can go through walls, maybe should use minecraft's lighting method
 	X export level
 	X player movement
-		- tweak player jump parameter
-		- coyote timer
-	- lights can go through walls, maybe should use minecraft's lighting method
+		X coyote timer (0.1-0.2s grace period after leaving ground during which jump can still occur)
+		- jump buffer (0.1-0.2s input window before landing that queues a jump)
+	X move player into a struct
+	- object
 
 # system/engine
 	X window              [WND]

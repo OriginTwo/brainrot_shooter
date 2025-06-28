@@ -19,9 +19,6 @@ SCN_GAME_CALLBACKS :: SCN_Callbacks{
 	scn_game_draw,
 }
 
-@(private="file") _PLAYER_WIDTH :: 1.0
-@(private="file") _PLAYER_HEIGHT :: 1.6
-
 @(private="file")
 _ctx: struct {
 	ren2d: GFX_2D_Renderer,
@@ -34,14 +31,236 @@ _ctx: struct {
 	level: LVL_Level,
 
 	cam: GFX_Camera,
-	desired_cam_y: f32,
-	cam_vel_y: f32,
+	player: _Player,
+
+	disable_bloom: bool,
+}
+
+@(private="file") _PLAYER_WIDTH :: 1.0
+@(private="file") _PLAYER_HEIGHT :: 1.6
+@(private="file") _PLAYER_SPEED :: 8.0
+@(private="file") _PLAYER_LAND_ANIM_DURATION :: 0.4
+@(private="file") _PLAYER_COYOTE_TIME :: 0.1
+
+@(private="file")
+_Player :: struct {
+	hand_texture: GFX_Texture,
+
+	desired_position: M_Vec3f32,
+	position: M_Vec3f32,
+	velocity_y: f32,
 	prev_floor_y: f32,
+	bob_t: f32,
 	land_time: f32,
 	play_land_anim: bool,
 	land_anim_max_offset: f32,
+	air_time: f32,
+	jump_left: u8,
+}
 
-	disable_bloom: bool,
+@(private="file")
+_player_init :: proc() {
+	ASST_load_texture(&_ctx.player.hand_texture, IMAGE_PLAYER_HAND_PNG)
+}
+
+@(private="file")
+_player_uninit :: proc() {
+	GFX_unload_texture(&_ctx.player.hand_texture)
+}
+
+@(private="file")
+_player_tick :: proc(input: INP_State, delta: f32) {
+	mouse_delta := INP_get_mouse_delta(input)
+
+	_ctx.cam.pitch += mouse_delta.y*DEFAULT_MOUSE_SENSITIVITY
+	_ctx.cam.yaw += mouse_delta.x*DEFAULT_MOUSE_SENSITIVITY
+
+	_ctx.cam.pitch = clamp(_ctx.cam.pitch, -89.0, 89.0)
+	_ctx.cam.yaw = math.mod(_ctx.cam.yaw, 360.0)
+
+	forward, _, right := GFX_get_camera_forward_up_right(_ctx.cam)
+	move_vec: M_Vec2f32
+	if INP_is_key_down(input, .W) {move_vec -= forward.xz}
+	if INP_is_key_down(input, .S) {move_vec += forward.xz}
+	if INP_is_key_down(input, .D) {move_vec += right.xz}
+	if INP_is_key_down(input, .A) {move_vec -= right.xz}
+	move_vec = linalg.normalize0(move_vec)
+	_ctx.player.desired_position.xz += move_vec*_PLAYER_SPEED*delta
+
+	chunk_coord := LVL_get_chunk_coord(_ctx.player.position.xz)
+	chunk, chunk_ok := _ctx.level.chunks[chunk_coord]
+	if chunk_ok {
+		for wall_index in chunk.wall_indices {
+			wall := _ctx.level.walls[wall_index]
+			relative_wall_height := (wall.y + wall.height) - _ctx.player.position.y
+			if (0.0 <= relative_wall_height && relative_wall_height <= 0.55) || // 0.55 for rounding error
+				wall.y + wall.height <= _ctx.player.position.y ||               // top of the wall is below player's feet
+				wall.y >= _ctx.player.position.y + _PLAYER_HEIGHT               // bottom of the wall is above player's head
+			{
+				continue
+			}
+
+			switch wall.facing {
+			case .North:
+				is_x_in_range := wall.p1.x <= _ctx.player.desired_position.x && _ctx.player.desired_position.x <= wall.p2.x
+				dist_y := wall.p1.y - _ctx.player.desired_position.z
+
+				if is_x_in_range && (0.0 < dist_y && dist_y < _PLAYER_WIDTH/2.0) {
+					_ctx.player.desired_position.z = wall.p1.y - _PLAYER_WIDTH/2.0
+				}
+
+			case .East:
+				is_z_in_range := wall.p1.y <= _ctx.player.desired_position.z && _ctx.player.desired_position.z <= wall.p2.y
+				dist_x := wall.p1.x - _ctx.player.desired_position.x
+
+				if is_z_in_range && (-_PLAYER_WIDTH/2.0 < dist_x && dist_x < 0.0) {
+					_ctx.player.desired_position.x = wall.p1.x + _PLAYER_WIDTH/2.0
+				}
+
+			case .South:
+				is_x_in_range := wall.p1.x <= _ctx.player.desired_position.x && _ctx.player.desired_position.x <= wall.p2.x
+				dist_y := wall.p1.y - _ctx.player.desired_position.z
+
+				if is_x_in_range && (-_PLAYER_WIDTH/2.0 < dist_y && dist_y < 0.0) {
+					_ctx.player.desired_position.z = wall.p1.y + _PLAYER_WIDTH/2.0
+				}
+
+			case .West:
+				is_z_in_range := wall.p1.y <= _ctx.player.desired_position.z && _ctx.player.desired_position.z <= wall.p2.y
+				dist_x := wall.p1.x - _ctx.player.desired_position.x
+
+				if is_z_in_range && (0.0 < dist_x && dist_x < _PLAYER_WIDTH/2.0) {
+					_ctx.player.desired_position.x = wall.p1.x - _PLAYER_WIDTH/2.0
+				}
+			}
+		}
+
+		highest_floor_y := -math.INF_F32
+		lowest_ceiling_y := math.INF_F32
+
+		for sector_index in chunk.sector_indices {
+			sector := _ctx.level.sectors[sector_index]
+
+			player_x_range := _ctx.player.desired_position.x + M_Vec2f32{-_PLAYER_WIDTH, _PLAYER_WIDTH}/2.0
+			player_z_range := _ctx.player.desired_position.z + M_Vec2f32{-_PLAYER_WIDTH, _PLAYER_WIDTH}/2.0
+
+			sector_x_range := M_Vec2f32{sector.position.x, sector.position.x + sector.size.x}
+			sector_z_range := M_Vec2f32{sector.position.y, sector.position.y + sector.size.y}
+
+			overlap_x_range := M_Vec2f32{max(player_x_range[0], sector_x_range[0]), min(player_x_range[1], sector_x_range[1])}
+			overlap_z_range := M_Vec2f32{max(player_z_range[0], sector_z_range[0]), min(player_z_range[1], sector_z_range[1])}
+
+			overlap_x_amount := overlap_x_range[1] - overlap_x_range[0] if overlap_x_range[1] > overlap_x_range[0] else 0.0
+			overlap_z_amount := overlap_z_range[1] - overlap_z_range[0] if overlap_z_range[1] > overlap_z_range[0] else 0.0
+
+			if overlap_x_amount*overlap_z_amount > 0.0 {
+				if sector.floor_y > highest_floor_y {
+					highest_floor_y = sector.floor_y
+				}
+				if sector.ceiling_y < lowest_ceiling_y {
+					lowest_ceiling_y = sector.ceiling_y
+				}
+			}
+		}
+
+		if _ctx.player.desired_position.y > highest_floor_y {
+			_ctx.player.land_time = 0.0
+			_ctx.player.play_land_anim = false
+
+			_ctx.player.air_time += delta
+
+			if _ctx.player.velocity_y >= 0.0 {
+				_ctx.player.velocity_y -= 65.0*delta
+			} else {
+				_ctx.player.velocity_y -= 100.0*delta
+			}
+		} else {
+			if _ctx.player.velocity_y < -20.0 {
+				_ctx.player.play_land_anim = true
+				_ctx.player.land_anim_max_offset = min(abs(_ctx.player.velocity_y)/80.0, 0.8)
+			}
+
+			_ctx.player.land_time += delta
+
+			_ctx.player.air_time = 0.0
+			_ctx.player.jump_left = 1
+
+			_ctx.player.velocity_y = -1.0*delta
+			_ctx.player.desired_position.y = highest_floor_y
+		}
+
+		if INP_is_key_pressed(input, .SPACE) && _ctx.player.air_time < _PLAYER_COYOTE_TIME && _ctx.player.jump_left > 0 {
+			_ctx.player.jump_left -= 1
+			_ctx.player.velocity_y = 16.0
+		}
+
+		_ctx.player.prev_floor_y = highest_floor_y
+		_ctx.player.desired_position.y += _ctx.player.velocity_y*delta
+		if _ctx.player.desired_position.y + _PLAYER_HEIGHT > lowest_ceiling_y {
+			_ctx.player.desired_position.y = lowest_ceiling_y - _PLAYER_HEIGHT
+			_ctx.player.velocity_y = 0.0
+		}
+	}
+
+	_ctx.player.position += (_ctx.player.desired_position - _ctx.player.position)*20.0*delta
+	_ctx.cam.position = _ctx.player.position + {0.0, _PLAYER_HEIGHT, 0.0}
+
+	if move_vec != {} {
+		_ctx.player.bob_t += delta*4.0
+	} else {
+		_ctx.player.bob_t -= delta*4.0
+	}
+	_ctx.player.bob_t = clamp(_ctx.player.bob_t, 0.0, 1.0)
+	_ctx.cam.offset.y = 0.1*_ctx.player.bob_t*math.sin(f32(TIME_now())*14.0)
+
+	if _ctx.player.play_land_anim {
+		if _ctx.player.land_time <= _PLAYER_LAND_ANIM_DURATION/2.0 {
+			t := _ctx.player.land_time
+			_ctx.cam.offset.y -= ease.cubic_out(t/(_PLAYER_LAND_ANIM_DURATION/2.0))*_ctx.player.land_anim_max_offset
+		} else if _ctx.player.land_time <= _PLAYER_LAND_ANIM_DURATION {
+			t := _PLAYER_LAND_ANIM_DURATION/2.0 - (_ctx.player.land_time - _PLAYER_LAND_ANIM_DURATION/2.0)
+			_ctx.cam.offset.y -= ease.cubic_in(t/(_PLAYER_LAND_ANIM_DURATION/2.0))*_ctx.player.land_anim_max_offset
+		} else {
+			_ctx.player.play_land_anim = false
+		}
+	}
+}
+
+@(private="file")
+_player_draw_hand :: proc() {
+	delta := f32(1.0/60.0)
+
+	rect: M_Rect
+	rect.width = 330.0
+	rect.height = 330.0
+	rect.x = WINDOW_WIDTH*3.0/4.0 - rect.width/3.0
+	rect.y = WINDOW_HEIGHT - rect.height*2.0/3.0
+	rect.x += 36.0*_ctx.player.bob_t*math.cos(f32(TIME_now())*6.0)
+	rect.y += abs(24.0*_ctx.player.bob_t*math.sin(f32(TIME_now())*6.0))
+
+	@(static) up_t: f32
+	@(static) down_t: f32
+
+	if _ctx.player.velocity_y > 0.0 {
+		up_t += delta*2.0
+		down_t -= delta*2.0
+	} else if _ctx.player.velocity_y < -1.0 {
+		up_t -= delta*2.0
+		down_t += delta*2.0
+	} else {
+		up_t -= delta*2.0
+		down_t -= delta*2.0
+	}
+
+	up_t = clamp(up_t, 0.0, 1.0)
+	down_t = clamp(down_t, 0.0, 1.0)
+
+	rect.y += 50.0*ease.back_out(up_t)
+	rect.y -= 50.0*ease.back_out(down_t)
+
+	rect.y += 6.0*math.sin(f32(TIME_now()))
+
+	GFX_draw_2d_texture(&_ctx.ren2d, _ctx.player.hand_texture, {0.0, 0.0, 48.0, 48.0}, rect, M_COLOR_WHITE)
 }
 
 scn_game_init :: proc() {
@@ -93,9 +312,13 @@ scn_game_init :: proc() {
 
 	_ctx.cam.position.y = 1.0
 	_ctx.cam.fovy = math.PI/2.0
+
+	_player_init()
 }
 
 scn_game_uninit :: proc() {
+	_player_uninit()
+
 	LVL_uninit(&_ctx.level)
 
 	sg.destroy_image(_ctx.tex)
@@ -106,7 +329,6 @@ scn_game_uninit :: proc() {
 	_ctx = {}
 }
 
-mpos: M_Vec2f32
 scn_game_tick :: proc(input: INP_State, delta: f32) {
 	when DEV_BUILD {
 		if INP_is_key_pressed(input, .F1) {
@@ -114,8 +336,6 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 			SCN_change(SCN_EDITOR_HANDLE)
 		}
 	}
-
-	mpos = INP_get_mouse_pos(input)
 
 	if INP_is_key_pressed(input, .ESCAPE) {
 		WND_set_should_close(true)
@@ -127,157 +347,7 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 		WND_lock_mouse(lock_mouse)
 	}
 
-	mdelta := INP_get_mouse_delta(input)
-
-	_ctx.cam.pitch += mdelta.y*DEFAULT_MOUSE_SENSITIVITY
-	_ctx.cam.yaw += mdelta.x*DEFAULT_MOUSE_SENSITIVITY
-
-	_ctx.cam.pitch = clamp(_ctx.cam.pitch, -89.0, 89.0)
-	_ctx.cam.yaw = math.mod(_ctx.cam.yaw, 360.0)
-
-	forward, _, right := GFX_get_camera_forward_up_right(_ctx.cam)
-	forward.y = 0.0
-	right.y = 0.0
-	mov_vec: M_Vec3f32
-	if INP_is_key_down(input, .W) {mov_vec -= forward}
-	if INP_is_key_down(input, .S) {mov_vec += forward}
-	if INP_is_key_down(input, .D) {mov_vec += right}
-	if INP_is_key_down(input, .A) {mov_vec -= right}
-	mov_vec = linalg.normalize0(mov_vec)
-	mov_vec *= 8.0*delta
-	_ctx.cam.position += mov_vec
-
-	chunk_coord := LVL_get_chunk_coord({_ctx.cam.position.x, _ctx.cam.position.z})
-	chunk, chunk_ok := _ctx.level.chunks[chunk_coord]
-	if chunk_ok {
-		for wall_index in chunk.wall_indices {
-			wall := _ctx.level.walls[wall_index]
-			relative_wall_height := (wall.y + wall.height) - (_ctx.cam.position.y - _PLAYER_HEIGHT)
-			if (0.0 <= relative_wall_height && relative_wall_height <= 0.55) || // 0.55 for rounding error
-				wall.y + wall.height <= _ctx.cam.position.y - _PLAYER_HEIGHT || // top of the wall is below player's feet
-				wall.y >= _ctx.cam.position.y                                   // bottom of the wall is above player's head
-			{
-				continue
-			}
-
-			switch wall.facing {
-			case .North:
-				is_x_in_range := wall.p1.x <= _ctx.cam.position.x && _ctx.cam.position.x <= wall.p2.x
-				dist_y := wall.p1.y - _ctx.cam.position.z
-
-				if is_x_in_range && (0.0 < dist_y && dist_y < _PLAYER_WIDTH/2.0) {
-					_ctx.cam.position.z = wall.p1.y - _PLAYER_WIDTH/2.0
-				}
-
-			case .East:
-				is_z_in_range := wall.p1.y <= _ctx.cam.position.z && _ctx.cam.position.z <= wall.p2.y
-				dist_x := wall.p1.x - _ctx.cam.position.x
-
-				if is_z_in_range && (-_PLAYER_WIDTH/2.0 < dist_x && dist_x < 0.0) {
-					_ctx.cam.position.x = wall.p1.x + _PLAYER_WIDTH/2.0
-				}
-
-			case .South:
-				is_x_in_range := wall.p1.x <= _ctx.cam.position.x && _ctx.cam.position.x <= wall.p2.x
-				dist_y := wall.p1.y - _ctx.cam.position.z
-
-				if is_x_in_range && (-_PLAYER_WIDTH/2.0 < dist_y && dist_y < 0.0) {
-					_ctx.cam.position.z = wall.p1.y + _PLAYER_WIDTH/2.0
-				}
-
-			case .West:
-				is_z_in_range := wall.p1.y <= _ctx.cam.position.z && _ctx.cam.position.z <= wall.p2.y
-				dist_x := wall.p1.x - _ctx.cam.position.x
-
-				if is_z_in_range && (0.0 < dist_x && dist_x < _PLAYER_WIDTH/2.0) {
-					_ctx.cam.position.x = wall.p1.x - _PLAYER_WIDTH/2.0
-				}
-			}
-		}
-
-		highest_floor_y := -math.INF_F32
-		lowest_ceiling_y := math.INF_F32
-
-		for sector_index in chunk.sector_indices {
-			sector := _ctx.level.sectors[sector_index]
-
-			player_x_range := _ctx.cam.position.x + M_Vec2f32{-_PLAYER_WIDTH, _PLAYER_WIDTH}/2.0
-			player_z_range := _ctx.cam.position.z + M_Vec2f32{-_PLAYER_WIDTH, _PLAYER_WIDTH}/2.0
-
-			sector_x_range := M_Vec2f32{sector.position.x, sector.position.x + sector.size.x}
-			sector_z_range := M_Vec2f32{sector.position.y, sector.position.y + sector.size.y}
-
-			overlap_x_range := M_Vec2f32{max(player_x_range[0], sector_x_range[0]), min(player_x_range[1], sector_x_range[1])}
-			overlap_z_range := M_Vec2f32{max(player_z_range[0], sector_z_range[0]), min(player_z_range[1], sector_z_range[1])}
-
-			overlap_x_amount := overlap_x_range[1] - overlap_x_range[0] if overlap_x_range[1] > overlap_x_range[0] else 0.0
-			overlap_z_amount := overlap_z_range[1] - overlap_z_range[0] if overlap_z_range[1] > overlap_z_range[0] else 0.0
-
-			if overlap_x_amount*overlap_z_amount > 0.0 {
-				if sector.floor_y > highest_floor_y {
-					highest_floor_y = sector.floor_y
-				}
-				if sector.ceiling_y < lowest_ceiling_y {
-					lowest_ceiling_y = sector.ceiling_y
-				}
-			}
-		}
-
-		if _ctx.desired_cam_y > highest_floor_y + _PLAYER_HEIGHT {
-			_ctx.land_time = 0.0
-			_ctx.play_land_anim = false
-
-			if _ctx.cam_vel_y >= 0.0 {
-				_ctx.cam_vel_y -= 65.0*delta
-			} else {
-				_ctx.cam_vel_y -= 100.0*delta
-			}
-		} else {
-			if _ctx.cam_vel_y < -20.0 {
-				_ctx.play_land_anim = true
-				_ctx.land_anim_max_offset = abs(_ctx.cam_vel_y)/140.0
-			}
-
-			_ctx.land_time += delta
-
-			_ctx.cam_vel_y = -1.0*delta
-			_ctx.desired_cam_y = highest_floor_y + _PLAYER_HEIGHT
-
-			if INP_is_key_pressed(input, .SPACE) {
-				_ctx.cam_vel_y = 16.0
-			}
-		}
-
-		_ctx.prev_floor_y = highest_floor_y
-		_ctx.desired_cam_y += _ctx.cam_vel_y*delta
-		if _ctx.desired_cam_y > lowest_ceiling_y {
-			_ctx.desired_cam_y = lowest_ceiling_y
-			_ctx.cam_vel_y = 0.0
-		}
-		_ctx.cam.position.y += (_ctx.desired_cam_y - _ctx.cam.position.y)*20.0*delta
-	}
-
-	@(static) bob_t: f32
-	if mov_vec != {} {
-		bob_t += delta*4.0
-	} else {
-		bob_t -= delta*4.0
-	}
-	bob_t = clamp(bob_t, 0.0, 1.0)
-	_ctx.cam.offset.y = 0.1*bob_t*math.sin(f32(TIME_now())*14.0)
-
-	if _ctx.play_land_anim {
-		LAND_TIME :: 0.4
-		if _ctx.land_time <= LAND_TIME/2.0 {
-			t := _ctx.land_time
-			_ctx.cam.offset.y -= ease.cubic_out(t/(LAND_TIME/2.0))*_ctx.land_anim_max_offset
-		} else if _ctx.land_time <= LAND_TIME {
-			t := LAND_TIME/2.0 - (_ctx.land_time - LAND_TIME/2.0)
-			_ctx.cam.offset.y -= ease.cubic_in_out(t/(LAND_TIME/2.0))*_ctx.land_anim_max_offset
-		} else {
-			_ctx.play_land_anim = false
-		}
-	}
+	_player_tick(input, delta)
 }
 
 scn_game_draw :: proc(alpha: f32) {
@@ -347,6 +417,8 @@ scn_game_draw :: proc(alpha: f32) {
 		M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, 1.0})),
 		3.0,
 	)
+
+	_player_draw_hand()
 
 	GFX_end_2d_renderer(&_ctx.ren2d)
 
