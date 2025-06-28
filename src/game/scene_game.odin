@@ -51,6 +51,8 @@ _Player :: struct {
 	velocity_y: f32,
 	prev_floor_y: f32,
 	bob_t: f32,
+	hand_bob_up_t: f32,
+	hand_bob_down_t: f32,
 	land_time: f32,
 	play_land_anim: bool,
 	land_anim_max_offset: f32,
@@ -190,7 +192,7 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 			_ctx.player.air_time = 0.0
 			_ctx.player.jump_left = 1
 
-			_ctx.player.velocity_y = -1.0*delta
+			_ctx.player.velocity_y = 0.0
 			_ctx.player.desired_position.y = highest_floor_y
 		}
 
@@ -218,6 +220,19 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 	_ctx.player.bob_t = clamp(_ctx.player.bob_t, 0.0, 1.0)
 	_ctx.cam.offset.y = 0.1*_ctx.player.bob_t*math.sin(f32(TIME_now())*14.0)
 
+	if _ctx.player.velocity_y > 0.0 {
+		_ctx.player.hand_bob_up_t += delta*2.0
+		_ctx.player.hand_bob_down_t -= delta*2.0
+	} else if _ctx.player.velocity_y < -1.0 {
+		_ctx.player.hand_bob_up_t -= delta*2.0
+		_ctx.player.hand_bob_down_t += delta*2.0
+	} else {
+		_ctx.player.hand_bob_up_t -= delta*2.0
+		_ctx.player.hand_bob_down_t -= delta*2.0
+	}
+	_ctx.player.hand_bob_up_t = clamp(_ctx.player.hand_bob_up_t, 0.0, 1.0)
+	_ctx.player.hand_bob_down_t = clamp(_ctx.player.hand_bob_down_t, 0.0, 1.0)
+
 	if _ctx.player.play_land_anim {
 		if _ctx.player.land_time <= _PLAYER_LAND_ANIM_DURATION/2.0 {
 			t := _ctx.player.land_time
@@ -232,40 +247,90 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 }
 
 @(private="file")
-_player_draw_hand :: proc() {
-	delta := f32(1.0/60.0)
-
-	rect: M_Rect
-	rect.width = 330.0
-	rect.height = 330.0
-	rect.x = WINDOW_WIDTH*3.0/4.0 - rect.width/3.0
-	rect.y = WINDOW_HEIGHT - rect.height*2.0/3.0
-	rect.x += 36.0*_ctx.player.bob_t*math.cos(f32(TIME_now())*6.0)
-	rect.y += abs(24.0*_ctx.player.bob_t*math.sin(f32(TIME_now())*6.0))
-
-	@(static) up_t: f32
-	@(static) down_t: f32
-
-	if _ctx.player.velocity_y > 0.0 {
-		up_t += delta*2.0
-		down_t -= delta*2.0
-	} else if _ctx.player.velocity_y < -1.0 {
-		up_t -= delta*2.0
-		down_t += delta*2.0
-	} else {
-		up_t -= delta*2.0
-		down_t -= delta*2.0
+_player_draw_hud :: proc() {
+	window_width: f32
+	window_height: f32
+	{
+		w: i32
+		h: i32
+		sdl.GetWindowSize(WND_get_handle(), &w, &h)
+		window_width = f32(w)
+		window_height = f32(h)
 	}
 
-	up_t = clamp(up_t, 0.0, 1.0)
-	down_t = clamp(down_t, 0.0, 1.0)
+	scale_x := window_width/WINDOW_WIDTH
+	scale_y := window_height/WINDOW_HEIGHT
 
-	rect.y += 50.0*ease.back_out(up_t)
-	rect.y -= 50.0*ease.back_out(down_t)
+	// hand
+	{
+		rect: M_Rect
+		rect.width = 330.0*scale_x
+		rect.height = 330.0*scale_y
+		rect.x = window_width*3.0/4.0 - rect.width/3.0
+		rect.y = window_height - rect.height*2.0/3.0
+		// move bob
+		rect.x += 36.0*_ctx.player.bob_t*math.cos(f32(TIME_now())*6.0)
+		rect.y += abs(24.0*_ctx.player.bob_t*math.sin(f32(TIME_now())*6.0))
+		// in-air bob
+		rect.y += 50.0*ease.back_out(_ctx.player.hand_bob_up_t)
+		rect.y -= 50.0*ease.back_out(_ctx.player.hand_bob_down_t)
+		// idle bob
+		rect.y += 6.0*math.sin(f32(TIME_now()))
+		GFX_draw_2d_texture(&_ctx.ren2d, _ctx.player.hand_texture, {0.0, 0.0, 48.0, 48.0}, rect, M_COLOR_WHITE)
+	}
 
-	rect.y += 6.0*math.sin(f32(TIME_now()))
+	// crosshair
+	{
+		center := M_Vec2f32{window_width, window_height}/2.0
 
-	GFX_draw_2d_texture(&_ctx.ren2d, _ctx.player.hand_texture, {0.0, 0.0, 48.0, 48.0}, rect, M_COLOR_WHITE)
+		// top
+		GFX_draw_2d_rect(
+			&_ctx.ren2d,
+			{
+				center.x - DEFAULT_CROSSHAIR_THICKNESS/2.0,
+				center.y - DEFAULT_CROSSHAIR_LENGTH - DEFAULT_CROSSHAIR_CENTER_GAP,
+				DEFAULT_CROSSHAIR_THICKNESS,
+				DEFAULT_CROSSHAIR_LENGTH,
+			},
+			DEFAULT_CROSSHAIR_COLOR,
+		)
+
+		// bottom
+		GFX_draw_2d_rect(
+			&_ctx.ren2d,
+			{
+				center.x - DEFAULT_CROSSHAIR_THICKNESS/2.0,
+				center.y + DEFAULT_CROSSHAIR_CENTER_GAP,
+				DEFAULT_CROSSHAIR_THICKNESS,
+				DEFAULT_CROSSHAIR_LENGTH,
+			},
+			DEFAULT_CROSSHAIR_COLOR,
+		)
+
+		// left
+		GFX_draw_2d_rect(
+			&_ctx.ren2d,
+			{
+				center.x - DEFAULT_CROSSHAIR_LENGTH - DEFAULT_CROSSHAIR_CENTER_GAP,
+				center.y - DEFAULT_CROSSHAIR_THICKNESS/2.0,
+				DEFAULT_CROSSHAIR_LENGTH,
+				DEFAULT_CROSSHAIR_THICKNESS,
+			},
+			DEFAULT_CROSSHAIR_COLOR,
+		)
+
+		// right
+		GFX_draw_2d_rect(
+			&_ctx.ren2d,
+			{
+				center.x + DEFAULT_CROSSHAIR_CENTER_GAP,
+				center.y - DEFAULT_CROSSHAIR_THICKNESS/2.0,
+				DEFAULT_CROSSHAIR_LENGTH,
+				DEFAULT_CROSSHAIR_THICKNESS,
+			},
+			DEFAULT_CROSSHAIR_COLOR,
+		)
+	}
 }
 
 scn_game_init :: proc() {
@@ -423,7 +488,7 @@ scn_game_draw :: proc(alpha: f32) {
 		3.0,
 	)
 
-	_player_draw_hand()
+	_player_draw_hud()
 
 	GFX_end_2d_renderer(&_ctx.ren2d)
 
