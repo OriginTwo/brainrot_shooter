@@ -39,6 +39,7 @@ _ctx: struct {
 @(private="file") _PLAYER_WIDTH :: 1.0
 @(private="file") _PLAYER_HEIGHT :: 1.6
 @(private="file") _PLAYER_SPEED :: 8.0
+@(private="file") _PLAYER_WALL_CHECK_RADIUS :: _PLAYER_WIDTH*2.0
 @(private="file") _PLAYER_LAND_ANIM_DURATION :: 0.4
 @(private="file") _PLAYER_COYOTE_TIME :: 0.1
 
@@ -89,58 +90,75 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 	move_vec = linalg.normalize0(move_vec)
 	_ctx.player.desired_position.xz += move_vec*_PLAYER_SPEED*delta
 
-	chunk_coord := LVL_get_chunk_coord(_ctx.player.position.xz)
-	chunk, chunk_ok := _ctx.level.chunks[chunk_coord]
-	if chunk_ok {
-		for wall_index in chunk.wall_indices {
-			wall := _ctx.level.walls[wall_index]
-			relative_wall_height := (wall.y + wall.height) - _ctx.player.position.y
-			if (0.0 <= relative_wall_height && relative_wall_height <= 0.55) || // 0.55 for rounding error
-				wall.y + wall.height <= _ctx.player.position.y ||               // top of the wall is below player's feet
-				wall.y >= _ctx.player.position.y + _PLAYER_HEIGHT               // bottom of the wall is above player's head
-			{
+	// wall collision
+	min_chunk_coord, max_chunk_coord := LVL_get_chunk_coord_range(
+		_ctx.player.position.xz - _PLAYER_WALL_CHECK_RADIUS/2.0,
+		_PLAYER_WALL_CHECK_RADIUS,
+	)
+	for chunk_coord_y in min_chunk_coord.y..<max_chunk_coord.y {
+		for chunk_coord_x in min_chunk_coord.x..<max_chunk_coord.x {
+			chunk, chunk_ok := _ctx.level.chunks[{chunk_coord_x, chunk_coord_y}]
+			if !chunk_ok {
 				continue
 			}
 
-			player_range := M_Range2f32{
-				min = _ctx.player.desired_position.xz - _PLAYER_WIDTH/2.0,
-				max = _ctx.player.desired_position.xz + _PLAYER_WIDTH/2.0,
-			}
-			wall_range := M_Range2f32{wall.p1, wall.p2}
-			overlap_dimension := M_range2f32_dimension(M_range2f32_intersect(player_range, wall_range))
-			is_x_in_range := overlap_dimension.x > 0.0
-			is_z_in_range := overlap_dimension.y > 0.0
-
-			switch wall.facing {
-			case .North:
-				dist_y := wall.p1.y - _ctx.player.desired_position.z
-
-				if is_x_in_range && (0.0 < dist_y && dist_y < _PLAYER_WIDTH/2.0) {
-					_ctx.player.desired_position.z = wall.p1.y - _PLAYER_WIDTH/2.0
+			for wall_index in chunk.wall_indices {
+				wall := _ctx.level.walls[wall_index]
+				relative_wall_height := (wall.y + wall.height) - _ctx.player.position.y
+				if (0.0 <= relative_wall_height && relative_wall_height <= 0.55) || // 0.55 for rounding error
+					wall.y + wall.height <= _ctx.player.position.y ||               // top of the wall is below player's feet
+					wall.y >= _ctx.player.position.y + _PLAYER_HEIGHT               // bottom of the wall is above player's head
+				{
+					continue
 				}
 
-			case .East:
-				dist_x := wall.p1.x - _ctx.player.desired_position.x
-
-				if is_z_in_range && (-_PLAYER_WIDTH/2.0 < dist_x && dist_x < 0.0) {
-					_ctx.player.desired_position.x = wall.p1.x + _PLAYER_WIDTH/2.0
+				player_range := M_Range2f32{
+					min = _ctx.player.desired_position.xz - _PLAYER_WIDTH/2.0,
+					max = _ctx.player.desired_position.xz + _PLAYER_WIDTH/2.0,
 				}
+				wall_range := M_Range2f32{wall.p1, wall.p2}
+				overlap_dimension := M_range2f32_dimension(M_range2f32_intersect(player_range, wall_range))
+				is_x_in_range := overlap_dimension.x > 0.0
+				is_z_in_range := overlap_dimension.y > 0.0
 
-			case .South:
-				dist_y := wall.p1.y - _ctx.player.desired_position.z
+				switch wall.facing {
+				case .North:
+					dist_y := wall.p1.y - _ctx.player.desired_position.z
 
-				if is_x_in_range && (-_PLAYER_WIDTH/2.0 < dist_y && dist_y < 0.0) {
-					_ctx.player.desired_position.z = wall.p1.y + _PLAYER_WIDTH/2.0
-				}
+					if is_x_in_range && (0.0 < dist_y && dist_y < _PLAYER_WIDTH/2.0) {
+						_ctx.player.desired_position.z = wall.p1.y - _PLAYER_WIDTH/2.0
+					}
 
-			case .West:
-				dist_x := wall.p1.x - _ctx.player.desired_position.x
+				case .East:
+					dist_x := wall.p1.x - _ctx.player.desired_position.x
 
-				if is_z_in_range && (0.0 < dist_x && dist_x < _PLAYER_WIDTH/2.0) {
-					_ctx.player.desired_position.x = wall.p1.x - _PLAYER_WIDTH/2.0
+					if is_z_in_range && (-_PLAYER_WIDTH/2.0 < dist_x && dist_x < 0.0) {
+						_ctx.player.desired_position.x = wall.p1.x + _PLAYER_WIDTH/2.0
+					}
+
+				case .South:
+					dist_y := wall.p1.y - _ctx.player.desired_position.z
+
+					if is_x_in_range && (-_PLAYER_WIDTH/2.0 < dist_y && dist_y < 0.0) {
+						_ctx.player.desired_position.z = wall.p1.y + _PLAYER_WIDTH/2.0
+					}
+
+				case .West:
+					dist_x := wall.p1.x - _ctx.player.desired_position.x
+
+					if is_z_in_range && (0.0 < dist_x && dist_x < _PLAYER_WIDTH/2.0) {
+						_ctx.player.desired_position.x = wall.p1.x - _PLAYER_WIDTH/2.0
+					}
 				}
 			}
 		}
+	}
+
+	// sector collision
+	{
+		// should always be valid
+		chunk_coord := LVL_get_chunk_coord(_ctx.player.position.xz)
+		chunk := _ctx.level.chunks[chunk_coord]
 
 		highest_floor_y := -math.INF_F32
 		lowest_ceiling_y := math.INF_F32

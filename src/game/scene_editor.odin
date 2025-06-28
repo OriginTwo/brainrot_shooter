@@ -15,32 +15,6 @@ import sdl "vendor:sdl3"
 import im "lib:imgui"
 import sg "lib:sokol/gfx"
 
-/*
-TODO: when switching to 3d view, construct the level in "runtime" format
-
-	- walls will be construct like 2d light & shadow where there will be and
-		intermediate cells that will have the flags of which wall direction they have
-
-NOTE: the cell that is inside a sector and has a neighboring cell inside another sector will not have
-	collision and some might have 2 walls as well (top & bottom from different floor & ceiling y)
-	- another idea: every wall has collision, but if "wall_height <= 0.25" then you snap up the wall
-
-RUNTIME FORMAT:
-	- sectors
-		- position   : Vec2f32
-		- size       : Vec2f32
-		- floor_y    : f32
-		- ceiling_y  : f32
-	- walls
-		- p1         : Vec2f32
-		- p2         : Vec2f32
-		- height     : f32
-		- normal     : Vec3f32
-	- chunks (for collision & rendering optimization)
-		- sector indices  : int
-		- wall indices    : int
-*/
-
 
 when DEV_BUILD {
 

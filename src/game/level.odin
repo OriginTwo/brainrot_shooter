@@ -40,6 +40,15 @@ LVL_Wall :: struct {
 	texture_id: LVL_Texture_ID,
 }
 
+/* TODO: implmenetation
+LVL_Object_Player_Spawn :: struct {
+}
+
+LVL_Object :: union {
+	LVL_Object_Player_Spawn,
+}
+*/
+
 LVL_Chunk :: struct {
 	sector_indices: []int,
 	wall_indices: []int,
@@ -229,10 +238,10 @@ LVL_get_chunk_coord :: proc(position: M_Vec2f32) -> [2]int {
 
 LVL_get_chunk_coord_range :: proc(position, size: M_Vec2f32) -> (min, max: [2]int) {
 	min_coord := position
-	if min_coord.x < 0.0 {
+	if min_coord.x < -LVL_UNIT_PER_GRID {
 		min_coord.x += LVL_UNIT_PER_GRID
 	}
-	if min_coord.y < 0.0 {
+	if min_coord.y < -LVL_UNIT_PER_GRID {
 		min_coord.y += LVL_UNIT_PER_GRID
 	}
 	min = LVL_get_chunk_coord(min_coord)
