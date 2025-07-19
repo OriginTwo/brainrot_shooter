@@ -63,7 +63,7 @@ _Player :: struct {
 
 @(private="file")
 _player_init :: proc() {
-	ASST_load_texture(&_ctx.player.hand_texture, IMAGE_PLAYER_HAND_PNG)
+	RES_load_texture(&_ctx.player.hand_texture, RES_ID_IMAGE_PLAYER_HAND_PNG)
 }
 
 @(private="file")
@@ -510,18 +510,20 @@ scn_game_draw :: proc(alpha: f32) {
 
 	GFX_end_2d_renderer(&_ctx.ren2d)
 
-	im.SetNextWindowSize({200.0, 400.0}, .Once)
-	im.Begin("Debug")
-	{
-		im.SliderFloat("pos_x", &_ctx.cam.position.x, -10.0, 10.0)
-		im.SliderFloat("pos_y", &_ctx.cam.position.y, -10.0, 10.0)
-		im.SliderFloat("pos_z", &_ctx.cam.position.z, -10.0, 10.0)
-		im.SliderFloat("pitch", &_ctx.cam.pitch, -89.0, 89.0)
-		im.SliderFloat("yaw", &_ctx.cam.yaw, 0.0, 360.0)
-		im.SliderFloat("roll", &_ctx.cam.roll, -30.0, 30.0)
-		im.Checkbox("disable bloom", &_ctx.disable_bloom)
+	when DEV_BUILD {
+		im.SetNextWindowSize({200.0, 400.0}, .Once)
+		im.Begin("Debug")
+		{
+			im.SliderFloat("pos_x", &_ctx.cam.position.x, -10.0, 10.0)
+			im.SliderFloat("pos_y", &_ctx.cam.position.y, -10.0, 10.0)
+			im.SliderFloat("pos_z", &_ctx.cam.position.z, -10.0, 10.0)
+			im.SliderFloat("pitch", &_ctx.cam.pitch, -89.0, 89.0)
+			im.SliderFloat("yaw", &_ctx.cam.yaw, 0.0, 360.0)
+			im.SliderFloat("roll", &_ctx.cam.roll, -30.0, 30.0)
+			im.Checkbox("disable bloom", &_ctx.disable_bloom)
+		}
+		im.End()
 	}
-	im.End()
 
 	GFX_end_frame()
 

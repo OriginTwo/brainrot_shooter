@@ -21,7 +21,7 @@ def build_game():
 	flags.append("-vet-using-param")
 	flags.append("-vet-semicolon")
 
-	pack_asset = False
+	pack_resource = False
 
 	shader_src_dir = "src/shader"
 	shader_out_dir = "src/game/shader"
@@ -34,14 +34,14 @@ def build_game():
 			flags.append("-debug")
 			flags.append("-subsystem:console")
 			flags.append("-define:DEV_BUILD=true")
-			pack_asset = False
+			pack_resource = False
 		case "release":
 			print("-- Configuration: Release")
 			flags.append("-o:aggressive")
 			flags.append("-subsystem:windows")
 			flags.append("-define:DEV_BUILD=false")
-			pack_asset = True
-			# TODO: resource file
+			pack_resource = True
+			# TODO: rc file
 
 
 	print("-- Compiling shaders")
@@ -71,14 +71,15 @@ def build_game():
 
 	print("-- Packing resources")
 	os.chdir("build")
-	subprocess.call([
-		"asset_packer",
+	respack_args = [
+		"respacker",
 		"-dir:res",
-		f"-packed:{str(pack_asset).lower()}",
 		"-pkg_name:game",
-		"-out_def:../src/game/generated_asset_def.odin",
-		"-out_packed:resource.dat",
-	])
+		"-out_odin:../src/game/generated_resource.odin",
+	]
+	if pack_resource:
+		respack_args.append("-out_pak:resource.pak")
+	subprocess.call(respack_args)
 	os.chdir(cwd)
 
 

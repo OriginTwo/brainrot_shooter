@@ -40,14 +40,23 @@ LVL_Wall :: struct {
 	texture_id: LVL_Texture_ID,
 }
 
-/* TODO: implmenetation
+// TODO: implmenetation
 LVL_Object_Player_Spawn :: struct {
+	position: M_Vec2f32,
+}
+
+LVL_Object_Light :: struct {
+	position: M_Vec3f32,
+	intensity: f32,
+	radius: f32,
+	color: M_FColor,
+	falloff: f32,
 }
 
 LVL_Object :: union {
 	LVL_Object_Player_Spawn,
+	LVL_Object_Light,
 }
-*/
 
 LVL_Chunk :: struct {
 	sector_indices: []int,
@@ -76,7 +85,7 @@ LVL_TEXTURE_SOURCES := [LVL_Texture_ID]M_Rect{
 }
 
 LVL_init :: proc(lvl: ^LVL_Level) {
-	ASST_load_texture(&lvl.texture, IMAGE_LEVEL_PNG)
+	RES_load_texture(&lvl.texture, RES_ID_IMAGE_LEVEL_PNG)
 	lvl.texture_num_cols = int(sg.query_image_width(lvl.texture.texture))/16
 	lvl.texture_num_rows = int(sg.query_image_height(lvl.texture.texture))/16
 }

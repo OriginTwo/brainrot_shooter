@@ -1,7 +1,7 @@
 build/res/asset_registry.json
-build/resource.dat
+build/resource.pak
 src/game/shader
-src/game/generated_asset_def.odin
+src/game/generated_resource.odin
 *.exe
 *.pdb
 *.rdi

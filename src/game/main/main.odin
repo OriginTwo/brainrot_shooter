@@ -45,8 +45,8 @@ main :: proc() {
 	game.AUD_init()
 	defer game.AUD_uninit()
 
-	game.ASST_init()
-	defer game.ASST_uninit()
+	game.RES_init()
+	defer game.RES_uninit()
 
 	// PART_init()
 	// defer PART_uninit()
