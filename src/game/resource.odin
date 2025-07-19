@@ -10,7 +10,6 @@ RES_init :: proc() {
 
 RES_uninit :: proc() {
 	RES__provider_uninit(&RES__ctx.provider)
-	// delete(RES__ctx.entries)
 	RES__ctx = {}
 }
 
@@ -43,127 +42,12 @@ RES_load_music :: proc(res: ^AUD_Music, id: RES_ID) {
 	AUD_load_music_from_memory(res, data)
 }
 
-// RES_acquire_byte :: proc(id: RES_ID) -> []byte {
-// 	entry, entry_ok := &RES__ctx.entries[id]
-// 	if !entry_ok {
-// 		data := RES__provider_load(&RES__ctx.provider, id)
-// 		RES__ctx.entries[id] = {
-// 			num_refs = 1,
-// 			variant = data,
-// 		}
-// 	} else {
-// 		entry.num_refs += 1
-// 	}
-// 	return entry.variant.([]byte)
-// }
-
-// @(deferred_in=RES_release_byte)
-// RES_acquire_byte_temp :: proc(id: RES_ID) -> []byte {
-// 	return RES_acquire_byte(id)
-// }
-
-// RES_release_byte :: proc(id: RES_ID) {
-// 	entry, entry_ok := &RES__ctx.entries[id]
-// 	if !entry_ok {
-// 		return
-// 	}
-// 	entry.num_refs -= 1
-// 	if entry.num_refs <= 0 {
-// 		delete(entry.variant.([]byte))
-// 		delete_key(&RES__ctx.entries, id)
-// 	}
-// }
-
-// RES_acquire_image :: proc(id: RES_ID) -> GFX_Image {
-// 	entry, entry_ok := &RES__ctx.entries[id]
-// 	if !entry_ok {
-// 		data := RES__provider_load(&RES__ctx.provider, id)
-// 		defer delete(data)
-// 		img: GFX_Image
-// 		GFX_load_image_from_memory(&img, data)
-// 		RES__ctx.entries[id] = {
-// 			num_refs = 1,
-// 			variant = img,
-// 		}
-// 	} else {
-// 		entry.num_refs += 1
-// 	}
-// 	return entry.variant.(GFX_Image)
-// }
-
-// @(deferred_in=RES_release_image)
-// RES_acquire_image_temp :: proc(id: RES_ID) -> GFX_Image {
-// 	return RES_acquire_image(id)
-// }
-
-// RES_release_image :: proc(id: RES_ID) {
-// 	entry, entry_ok := &RES__ctx.entries[id]
-// 	if !entry_ok {
-// 		return
-// 	}
-// 	entry.num_refs -= 1
-// 	if entry.num_refs <= 0 {
-// 		GFX_unload_image(&entry.variant.(GFX_Image))
-// 		delete_key(&RES__ctx.entries, id)
-// 	}
-// }
-
-// RES_acquire_texture :: proc(id: RES_ID) -> GFX_Texture {
-// 	entry, entry_ok := &RES__ctx.entries[id]
-// 	if !entry_ok {
-// 		data := RES__provider_load(&RES__ctx.provider, id)
-// 		defer delete(data)
-// 		img: GFX_Image
-// 		tex: GFX_Texture
-// 		GFX_load_image_from_memory(&img, data)
-// 		defer GFX_unload_image(&img)
-// 		GFX_load_texture_from_image(&tex, img)
-// 		RES__ctx.entries[id] = {
-// 			num_refs = 1,
-// 			variant = tex,
-// 		}
-// 	} else {
-// 		entry.num_refs += 1
-// 	}
-// 	return entry.variant.(GFX_Texture)
-// }
-
-// @(deferred_in=RES_release_texture)
-// RES_acquire_texture_temp :: proc(id: RES_ID) -> GFX_Texture {
-// 	return RES_acquire_texture(id)
-// }
-
-// RES_release_texture :: proc(id: RES_ID) {
-// 	entry, entry_ok := &RES__ctx.entries[id]
-// 	if !entry_ok {
-// 		return
-// 	}
-// 	entry.num_refs -= 1
-// 	if entry.num_refs <= 0 {
-// 		GFX_unload_texture(&entry.variant.(GFX_Texture))
-// 		delete_key(&RES__ctx.entries, id)
-// 	}
-// }
-
 
 
 @(private="file")
 RES__ctx: struct {
 	provider: RES__Provider,
-	// entries: map[RES_ID]RES__Loaded_Entry,
 }
-
-// @(private="file")
-// RES__Loaded_Entry :: struct {
-// 	num_refs: int,
-// 	variant: union {
-// 		[]byte,
-// 		GFX_Image,
-// 		GFX_Texture,
-// 		AUD_Sound,
-// 		AUD_Music,
-// 	},
-// }
 
 
 ///////////////////////////////////////////////////////////
