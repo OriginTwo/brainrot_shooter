@@ -436,6 +436,20 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	}
 
 	_player_tick(input, delta)
+
+	{
+		ray_origin := _ctx.cam.position
+		ray_direction, _, _ := GFX_get_camera_forward_up_right(_ctx.cam)
+		ray_sphere_vector := M_Vec3f32{0.0, 1.0, 0.0} - ray_origin
+		dot := linalg.dot(ray_sphere_vector, ray_direction)
+		distance := linalg.length(ray_sphere_vector)
+		d := (0.5*0.5 - (distance*distance - dot*dot))
+		hit := d >= 0.0
+		// float d = radius*radius - (distance*distance - vector*vector);
+		if hit {
+			fmt.println("hit", distance)
+		}
+	}
 }
 
 scn_game_draw :: proc(alpha: f32) {
@@ -473,6 +487,14 @@ scn_game_draw :: proc(alpha: f32) {
 		color = {1.0, 1.0, 1.0},
 		falloff = 2.0,
 	})
+
+	GFX_draw_3d_billboard_rect(
+		&_ctx.ren3d,
+		{0.0, 1.0, 0.0},
+		{1.0, 1.0},
+		M_COLOR_CYAN,
+		true,
+	)
 
 	GFX_end_3d_renderer(&_ctx.ren3d)
 

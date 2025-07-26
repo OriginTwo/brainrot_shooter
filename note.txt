@@ -1,12 +1,6 @@
-collector game reimagined
-
-- platformer
-- atmospheric dark environment with some fireflies to slightly light up
-- player shoot flares to light up the place
-- talks to npc or find clues to collect stuff
-
-- palette: https://lospec.com/palette-list/berry-nebula
-
-- TXT could be optimized?? by allowing for retained mode API to cache the parsed result
-	rather than parse the text every frame, but since it's not impacting the performance,
-	it doesn't need to be optimized
+- big arena
+- endless roguelike
+- drawn down abyss type gameplay
+	- energy charge up slowly
+	- killing enemies grant you energy
+	- use energy to cast spells

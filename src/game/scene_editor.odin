@@ -16,22 +16,6 @@ import sdl "vendor:sdl3"
 import im "lib:imgui"
 import sg "lib:sokol/gfx"
 
-/* TODO: a
-state: Editing_Sector, Editing_Object
-sub_state:
-	Editing_Sector
-	- Placing_Sector
-	- Deleting_Sector
-	- Selecting_Sector // single/multi select
-	Editing_Object
-	- Placing_Object
-	- Deleting_Object
-	- Selecting_Object
-
-state: Editing_State
-sub_state: [Editing_State]Editing_Sub_State
-*/
-
 when DEV_BUILD {
 
 SCN_EDITOR_HANDLE :: SCN_Handle(#hash("editor", "fnv64a"))
@@ -51,11 +35,6 @@ _ctx: struct {
 
 	level: _Level,
 	level_preview: LVL_Level,
-
-	editing_state: _Editing_State,
-	editing_sub_state: [_Editing_State]_Editing_Sub_State,
-	editing_state_items_str: cstring,
-	editing_sub_state_items_str: cstring,
 
 	world_mouse_pos: [2]f32,
 	grid_mouse_pos: [2]int,
@@ -91,23 +70,6 @@ scn_editor_init :: proc() {
 	_ctx.cam.position.y = 1.5
 	_ctx.cam.fovy = math.PI/2.0
 
-	{
-		b: strings.Builder
-		strings.builder_init(&b)
-		defer strings.builder_destroy(&b)
-
-		for state in _Editing_State {
-			strings.write_string(&b, fmt.tprintf("%s\x00", state))
-		}
-		_ctx.editing_state_items_str = strings.clone_to_cstring(strings.to_string(b))
-
-		strings.builder_reset(&b)
-		for sub_state in _Editing_Sub_State {
-			strings.write_string(&b, fmt.tprintf("%s\x00", sub_state))
-		}
-		_ctx.editing_sub_state_items_str = strings.clone_to_cstring(strings.to_string(b))
-	}
-
 	_ctx.mouse_pressed_grid = _INVALID_GRID_COORD
 
 	_ctx.next_floor_y = 0.0
@@ -131,9 +93,6 @@ scn_editor_init :: proc() {
 }
 
 scn_editor_uninit :: proc() {
-	delete(_ctx.editing_state_items_str)
-	delete(_ctx.editing_sub_state_items_str)
-
 	for &sector in _ctx.level.sectors {
 		delete(sector.linked_sectors)
 	}
@@ -226,22 +185,6 @@ scn_editor_draw :: proc(alpha: f32) {
 	}
 
 	im.Checkbox("3D_VIEW", &_ctx.is_3d_view)
-
-	{
-		curr_state := i32(_ctx.editing_state)
-		im.Text("EDITING_STATE:")
-		im.SameLine()
-		im.SetNextItemWidth(120.0)
-		im.Combo("###EDITING_STATE", &curr_state, _ctx.editing_state_items_str)
-		_ctx.editing_state = _Editing_State(curr_state)
-
-		curr_sub_state := i32(_ctx.editing_sub_state[_ctx.editing_state])
-		im.Text("EDITING_SUB_STATE:")
-		im.SameLine()
-		im.SetNextItemWidth(120.0)
-		im.Combo("###EDITING_SUB_STATE", &curr_sub_state, _ctx.editing_sub_state_items_str)
-		_ctx.editing_sub_state[_ctx.editing_state] = _Editing_Sub_State(curr_sub_state)
-	}
 
 	{
 		floor_y_max := _ctx.next_ceiling_y - _FLOOR_AND_CEILING_Y_INCREMENT
@@ -351,19 +294,6 @@ scn_editor_draw :: proc(alpha: f32) {
 
 
 @(private="file")
-_Editing_State :: enum {
-	Sector,
-	Object,
-}
-
-@(private="file")
-_Editing_Sub_State :: enum {
-	Placing,
-	Deleting,
-}
-
-
-@(private="file")
 _tick_2d_view :: proc(input: INP_State, delta: f32) {
 	{
 		vel := M_Vec2f32{
@@ -386,16 +316,10 @@ _tick_2d_view :: proc(input: INP_State, delta: f32) {
 	}
 
 	if !INP_is_mouse_down(input, .Left) && INP_get_mouse_delta(input) != {} {
-		switch _ctx.editing_state {
-		case .Sector: _update_hovering_sector()
-		case .Object: _update_hovering_object()
-		}
+		_update_hovering_sector()
 	}
 
-	switch _ctx.editing_state {
-	case .Sector: _tick_sector_editing_state(input)
-	case .Object: _tick_object_editing_state(input)
-	}
+	_tick_sector_editing_state(input)
 }
 
 @(private="file")
@@ -1143,138 +1067,6 @@ _tick_sector_editing_state :: proc(input: INP_State) {
 		_ctx.linking_sector1_handle = _INVALID_SECTOR_HANDLE
 		_ctx.linking_sector2_handle = _INVALID_SECTOR_HANDLE
 	}
-}
-
-@(private="file")
-_update_hovering_object :: proc() {
-	// hovering_sector_handle := _INVALID_SECTOR_HANDLE
-	// hovering_sector_area := _MAX_SECTOR_GRID_COORD*_MAX_SECTOR_GRID_COORD
-
-	// mp := _ctx.grid_mouse_pos
-	// if mp.x < 0 {
-	// 	mp.x += 1
-	// }
-	// if mp.y < 0 {
-	// 	mp.y += 1
-	// }
-	// chunk_coord := _get_chunk_coord(mp)
-
-	// chunk, chunk_ok := _ctx.level.chunks[chunk_coord]
-	// if chunk_ok {
-	// 	for handle in chunk {
-	// 		if sector := _get_sector_ptr(handle); sector != nil {
-	// 			if sector.is_deleted {
-	// 				continue
-	// 			}
-
-	// 			if (sector.position.x <= _ctx.grid_mouse_pos.x && _ctx.grid_mouse_pos.x < sector.position.x + sector.size.x) &&
-	// 				(sector.position.y <= _ctx.grid_mouse_pos.y && _ctx.grid_mouse_pos.y < sector.position.y + sector.size.y)
-	// 			{
-	// 				area := sector.size.x*sector.size.y
-	// 				if area < hovering_sector_area {
-	// 					hovering_sector_handle = sector.handle
-	// 					hovering_sector_area = area
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// }
-
-	// _ctx.hovering_sector_handle = hovering_sector_handle
-}
-
-@(private="file")
-_tick_object_editing_state :: proc(input: INP_State) {
-	// if INP_is_mouse_pressed(input, .Left) {
-	// 	_ctx.mouse_pressed_grid = _ctx.grid_mouse_pos
-	// }
-
-	// if INP_is_mouse_down(input, .Left) &&
-	// 	!_ctx.is_placing_sector &&
-	// 	_ctx.grid_mouse_pos - _ctx.mouse_pressed_grid != {}
-	// {
-	// 	_ctx.is_placing_sector = true
-	// 	_ctx.placing_sector_p1 = _ctx.mouse_pressed_grid
-	// 	_ctx.placing_sector_p2 = _ctx.grid_mouse_pos
-	// }
-
-	// if _ctx.is_placing_sector {
-	// 	_ctx.placing_sector_p2 = _ctx.grid_mouse_pos
-	// }
-
-	// if INP_is_mouse_released(input, .Left) {
-	// 	if _ctx.is_placing_sector {
-	// 		// placing sector
-	// 		minimum := [2]int{
-	// 			min(_ctx.placing_sector_p1.x, _ctx.placing_sector_p2.x),
-	// 			min(_ctx.placing_sector_p1.y, _ctx.placing_sector_p2.y),
-	// 		}
-	// 		maximum := [2]int{
-	// 			max(_ctx.placing_sector_p1.x, _ctx.placing_sector_p2.x) + 1,
-	// 			max(_ctx.placing_sector_p1.y, _ctx.placing_sector_p2.y) + 1,
-	// 		}
-
-	// 		_append_sector(
-	// 			minimum,
-	// 			maximum - minimum,
-	// 		)
-
-	// 		_ctx.is_placing_sector = false
-	// 		_ctx.placing_sector_p1 = _INVALID_GRID_COORD
-	// 		_ctx.placing_sector_p2 = _INVALID_GRID_COORD
-	// 	} else {
-	// 		// selecting sector
-	// 		_ctx.selected_sector_handle = _ctx.hovering_sector_handle
-	// 		_ctx.selected_sector_window_open = _ctx.hovering_sector_handle != _INVALID_SECTOR_HANDLE
-	// 	}
-
-	// 	_ctx.mouse_pressed_grid = _INVALID_GRID_COORD
-	// }
-
-	// if INP_is_mouse_pressed(input, .Right) && _ctx.hovering_sector_handle != _INVALID_SECTOR_HANDLE {
-	// 	_ctx.linking_sector1_handle = _ctx.hovering_sector_handle
-	// }
-
-	// if INP_is_mouse_released(input, .Right) && _ctx.hovering_sector_handle != _INVALID_SECTOR_HANDLE {
-	// 	_ctx.linking_sector2_handle = _ctx.hovering_sector_handle
-
-	// 	if _ctx.linking_sector2_handle != _ctx.linking_sector1_handle {
-	// 		sector1 := _get_sector_ptr(_ctx.linking_sector1_handle)
-	// 		sector2 := _get_sector_ptr(_ctx.linking_sector2_handle)
-
-	// 		if sector1 != nil && sector2 != nil {
-	// 			sector1_to_sector2_link_index := -1
-	// 			sector2_to_sector1_link_index := -1
-
-	// 			for linked_sector_handle, i in sector1.linked_sectors {
-	// 				if linked_sector_handle == sector2.handle {
-	// 					sector1_to_sector2_link_index = i
-	// 					break
-	// 				}
-	// 			}
-
-	// 			for linked_sector_handle, i in sector2.linked_sectors {
-	// 				if linked_sector_handle == sector1.handle {
-	// 					sector2_to_sector1_link_index = i
-	// 					break
-	// 				}
-	// 			}
-
-	// 			if sector1_to_sector2_link_index == -1 && sector2_to_sector1_link_index == -1 {
-	// 				// not linked -> link
-	// 				append(&sector1.linked_sectors, _ctx.linking_sector2_handle)
-	// 				append(&sector2.linked_sectors, _ctx.linking_sector1_handle)
-	// 			} else {
-	// 				// already linked -> remove
-	// 				unordered_remove(&sector1.linked_sectors, sector1_to_sector2_link_index)
-	// 				unordered_remove(&sector2.linked_sectors, sector2_to_sector1_link_index)
-	// 			}
-	// 		}
-	// 	}
-
-	// 	_ctx.linking_sector1_handle = _INVALID_SECTOR_HANDLE
-	// 	_ctx.linking_sector2_handle = _INVALID_SECTOR_HANDLE
-	// }
 }
 
 @(private="file")

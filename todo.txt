@@ -1,11 +1,7 @@
 # DOING:
-	- lights can go through walls, maybe should use minecraft's lighting method
-	X export level
 	X player movement
 		X coyote timer (0.1-0.2s grace period after leaving ground during which jump can still occur)
 		- jump buffer (0.1-0.2s input window before landing that queues a jump)
-	X move player into a struct
-	- object
 
 # system/engine
 	X window              [WND]
@@ -64,19 +60,6 @@
 		X texture
 		X texture tiling
 		X match floor/ceiling y with another sector
-	- object
-		- place
-		- remove
-		- select
-			- move
-			- deselect
-		- properties (custom properties??)
-		- draw
-		NOTE: ex object: switch, enemy spawner, gun, health
-	- tool
-		- select
-		- brush
-		- eraser
 	- undo/redo ??
 	- save level   (json format)
 	- load level   (json format)
