@@ -54,9 +54,6 @@ main :: proc() {
 	game.SCN_init()
 	defer game.SCN_uninit()
 	game.SCN_register(game.SCN_GAME_HANDLE, game.SCN_GAME_CALLBACKS)
-	when game.DEV_BUILD {
-		game.SCN_register(game.SCN_EDITOR_HANDLE, game.SCN_EDITOR_CALLBACKS)
-	}
 	game.SCN_set_initial(game.SCN_GAME_HANDLE)
 
 	frame_input_state: game.INP_State

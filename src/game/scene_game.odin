@@ -28,10 +28,11 @@ _ctx: struct {
 	tex: sg.Image,
 	smp: sg.Sampler,
 
-	level: LVL_Level,
-
 	cam: GFX_Camera,
 	player: _Player,
+
+	enemy: _Enemy,
+	tung_tung_tex: GFX_Texture,
 
 	disable_bloom: bool,
 }
@@ -49,16 +50,8 @@ _Player :: struct {
 
 	desired_position: M_Vec3f32,
 	position: M_Vec3f32,
-	velocity_y: f32,
-	prev_floor_y: f32,
+	knockback_vel: M_Vec2f32,
 	bob_t: f32,
-	hand_bob_up_t: f32,
-	hand_bob_down_t: f32,
-	land_time: f32,
-	play_land_anim: bool,
-	land_anim_max_offset: f32,
-	air_time: f32,
-	jump_left: u8,
 }
 
 @(private="file")
@@ -90,141 +83,10 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 	move_vec = linalg.normalize0(move_vec)
 	_ctx.player.desired_position.xz += move_vec*_PLAYER_SPEED*delta
 
-	// wall collision
-	min_chunk_coord, max_chunk_coord := LVL_get_chunk_coord_range(
-		_ctx.player.position.xz - _PLAYER_WALL_CHECK_RADIUS/2.0,
-		_PLAYER_WALL_CHECK_RADIUS,
-	)
-	for chunk_coord_y in min_chunk_coord.y..<max_chunk_coord.y {
-		for chunk_coord_x in min_chunk_coord.x..<max_chunk_coord.x {
-			chunk, chunk_ok := _ctx.level.chunks[{chunk_coord_x, chunk_coord_y}]
-			if !chunk_ok {
-				continue
-			}
-
-			for wall_index in chunk.wall_indices {
-				wall := _ctx.level.walls[wall_index]
-				relative_wall_height := (wall.y + wall.height) - _ctx.player.position.y
-				if (0.0 <= relative_wall_height && relative_wall_height <= 0.55) || // 0.55 for rounding error
-					wall.y + wall.height <= _ctx.player.position.y ||               // top of the wall is below player's feet
-					wall.y >= _ctx.player.position.y + _PLAYER_HEIGHT               // bottom of the wall is above player's head
-				{
-					continue
-				}
-
-				player_range := M_Range2f32{
-					min = _ctx.player.desired_position.xz - _PLAYER_WIDTH/2.0,
-					max = _ctx.player.desired_position.xz + _PLAYER_WIDTH/2.0,
-				}
-				wall_range := M_Range2f32{wall.p1, wall.p2}
-				overlap_dimension := M_range2f32_dimension(M_range2f32_intersect(player_range, wall_range))
-				is_x_in_range := overlap_dimension.x > 0.0
-				is_z_in_range := overlap_dimension.y > 0.0
-
-				switch wall.facing {
-				case .North:
-					dist_y := wall.p1.y - _ctx.player.desired_position.z
-
-					if is_x_in_range && (0.0 < dist_y && dist_y < _PLAYER_WIDTH/2.0) {
-						_ctx.player.desired_position.z = wall.p1.y - _PLAYER_WIDTH/2.0
-					}
-
-				case .East:
-					dist_x := wall.p1.x - _ctx.player.desired_position.x
-
-					if is_z_in_range && (-_PLAYER_WIDTH/2.0 < dist_x && dist_x < 0.0) {
-						_ctx.player.desired_position.x = wall.p1.x + _PLAYER_WIDTH/2.0
-					}
-
-				case .South:
-					dist_y := wall.p1.y - _ctx.player.desired_position.z
-
-					if is_x_in_range && (-_PLAYER_WIDTH/2.0 < dist_y && dist_y < 0.0) {
-						_ctx.player.desired_position.z = wall.p1.y + _PLAYER_WIDTH/2.0
-					}
-
-				case .West:
-					dist_x := wall.p1.x - _ctx.player.desired_position.x
-
-					if is_z_in_range && (0.0 < dist_x && dist_x < _PLAYER_WIDTH/2.0) {
-						_ctx.player.desired_position.x = wall.p1.x - _PLAYER_WIDTH/2.0
-					}
-				}
-			}
-		}
-	}
-
-	// sector collision
+	_ctx.player.desired_position.xz += _ctx.player.knockback_vel*delta
 	{
-		// should always be valid
-		chunk_coord := LVL_get_chunk_coord(_ctx.player.position.xz)
-		chunk := _ctx.level.chunks[chunk_coord]
-
-		highest_floor_y := -math.INF_F32
-		lowest_ceiling_y := math.INF_F32
-
-		for sector_index in chunk.sector_indices {
-			sector := _ctx.level.sectors[sector_index]
-
-			player_range := M_Range2f32{
-				min = _ctx.player.desired_position.xz - _PLAYER_WIDTH/2.0,
-				max = _ctx.player.desired_position.xz + _PLAYER_WIDTH/2.0,
-			}
-
-			sector_range := M_Range2f32{
-				min = sector.position,
-				max = sector.position + sector.size,
-			}
-
-			overlap_amount := M_range2f32_dimension(M_range2f32_intersect(player_range, sector_range))
-
-			if overlap_amount.x*overlap_amount.y > 0.0 {
-				if sector.floor_y > highest_floor_y {
-					highest_floor_y = sector.floor_y
-				}
-				if sector.ceiling_y < lowest_ceiling_y {
-					lowest_ceiling_y = sector.ceiling_y
-				}
-			}
-		}
-
-		if _ctx.player.desired_position.y > highest_floor_y {
-			_ctx.player.land_time = 0.0
-			_ctx.player.play_land_anim = false
-
-			_ctx.player.air_time += delta
-
-			if _ctx.player.velocity_y >= 0.0 {
-				_ctx.player.velocity_y -= 65.0*delta
-			} else {
-				_ctx.player.velocity_y -= 100.0*delta
-			}
-		} else {
-			if _ctx.player.velocity_y < -20.0 {
-				_ctx.player.play_land_anim = true
-				_ctx.player.land_anim_max_offset = min(abs(_ctx.player.velocity_y)/80.0, 0.8)
-			}
-
-			_ctx.player.land_time += delta
-
-			_ctx.player.air_time = 0.0
-			_ctx.player.jump_left = 1
-
-			_ctx.player.velocity_y = 0.0
-			_ctx.player.desired_position.y = highest_floor_y
-		}
-
-		if INP_is_key_pressed(input, .SPACE) && _ctx.player.air_time < _PLAYER_COYOTE_TIME && _ctx.player.jump_left > 0 {
-			_ctx.player.jump_left -= 1
-			_ctx.player.velocity_y = 16.0
-		}
-
-		_ctx.player.prev_floor_y = highest_floor_y
-		_ctx.player.desired_position.y += _ctx.player.velocity_y*delta
-		if _ctx.player.desired_position.y + _PLAYER_HEIGHT > lowest_ceiling_y {
-			_ctx.player.desired_position.y = lowest_ceiling_y - _PLAYER_HEIGHT
-			_ctx.player.velocity_y = 0.0
-		}
+		rate := 1 - math.pow(2.0, -15.0*delta)
+		_ctx.player.knockback_vel += (M_Vec2f32{0.0, 0.0} - _ctx.player.knockback_vel)*rate
 	}
 
 	_ctx.player.position += (_ctx.player.desired_position - _ctx.player.position)*20.0*delta
@@ -237,31 +99,6 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 	}
 	_ctx.player.bob_t = clamp(_ctx.player.bob_t, 0.0, 1.0)
 	_ctx.cam.offset.y = 0.1*_ctx.player.bob_t*math.sin(f32(TIME_now())*14.0)
-
-	if _ctx.player.velocity_y > 0.0 {
-		_ctx.player.hand_bob_up_t += delta*2.0
-		_ctx.player.hand_bob_down_t -= delta*2.0
-	} else if _ctx.player.velocity_y < -1.0 {
-		_ctx.player.hand_bob_up_t -= delta*2.0
-		_ctx.player.hand_bob_down_t += delta*2.0
-	} else {
-		_ctx.player.hand_bob_up_t -= delta*2.0
-		_ctx.player.hand_bob_down_t -= delta*2.0
-	}
-	_ctx.player.hand_bob_up_t = clamp(_ctx.player.hand_bob_up_t, 0.0, 1.0)
-	_ctx.player.hand_bob_down_t = clamp(_ctx.player.hand_bob_down_t, 0.0, 1.0)
-
-	if _ctx.player.play_land_anim {
-		if _ctx.player.land_time <= _PLAYER_LAND_ANIM_DURATION/2.0 {
-			t := _ctx.player.land_time
-			_ctx.cam.offset.y -= ease.cubic_out(t/(_PLAYER_LAND_ANIM_DURATION/2.0))*_ctx.player.land_anim_max_offset
-		} else if _ctx.player.land_time <= _PLAYER_LAND_ANIM_DURATION {
-			t := _PLAYER_LAND_ANIM_DURATION/2.0 - (_ctx.player.land_time - _PLAYER_LAND_ANIM_DURATION/2.0)
-			_ctx.cam.offset.y -= ease.cubic_in(t/(_PLAYER_LAND_ANIM_DURATION/2.0))*_ctx.player.land_anim_max_offset
-		} else {
-			_ctx.player.play_land_anim = false
-		}
-	}
 }
 
 @(private="file")
@@ -289,9 +126,6 @@ _player_draw_hud :: proc() {
 		// move bob
 		rect.x += 36.0*_ctx.player.bob_t*math.cos(f32(TIME_now())*6.0)
 		rect.y += abs(24.0*_ctx.player.bob_t*math.sin(f32(TIME_now())*6.0))
-		// in-air bob
-		rect.y += 50.0*ease.back_out(_ctx.player.hand_bob_up_t)
-		rect.y -= 50.0*ease.back_out(_ctx.player.hand_bob_down_t)
 		// idle bob
 		rect.y += 6.0*math.sin(f32(TIME_now()))
 		GFX_draw_2d_texture(&_ctx.ren2d, _ctx.player.hand_texture, {0.0, 0.0, 48.0, 48.0}, rect, M_COLOR_WHITE)
@@ -351,6 +185,46 @@ _player_draw_hud :: proc() {
 	}
 }
 
+@(private="file")
+_Enemy :: struct {
+	position: M_Vec3f32,
+	hp: int,
+	hitbox_offset: f32,
+	hitbox_radius: f32,
+	attack_timer: TIME_Timer,
+}
+
+@(private="file")
+_enemy_tick :: proc(e: ^_Enemy, delta: f32) {
+	if !TIME_is_timer_timeout(e.attack_timer) {
+		return
+	}
+
+	target := _ctx.player.position
+	dir := linalg.normalize0(target - e.position)
+
+	if linalg.length2(target - e.position) > e.hitbox_radius*e.hitbox_radius {
+		e.position += dir*2.0*delta
+	} else {
+		_ctx.player.knockback_vel = dir.xz*10.0
+		TIME_set_timer(&e.attack_timer, 1.0)
+	}
+}
+
+@(private="file")
+_enemy_draw :: proc(e: _Enemy) {
+	GFX_draw_3d_billboard_texture(
+		&_ctx.ren3d,
+		_ctx.tung_tung_tex.texture,
+		_ctx.tung_tung_tex.sampler,
+		e.position + {0.0, e.hitbox_offset, 0.0},
+		{e.hitbox_radius, e.hitbox_radius}*2.0,
+		{0.0, 0.0, 91.0, 211.0},
+		M_COLOR_WHITE,
+		true,
+	)
+}
+
 scn_game_init :: proc() {
 	GFX_create_2d_renderer(&_ctx.ren2d)
 	GFX_create_3d_renderer(&_ctx.ren3d, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
@@ -386,28 +260,20 @@ scn_game_init :: proc() {
 		GFX_unload_image(&img)
 	}
 
-	{
-		LVL_init(&_ctx.level)
-
-		data, data_ok := os.read_entire_file("exported_level.lvl")
-		if data_ok {
-			ser: SER_Serializer
-			SER_init_reader(&ser, data)
-			LVL_serialize(&_ctx.level, &ser)
-			delete(data)
-		}
-	}
-
 	_ctx.cam.position.y = 1.0
 	_ctx.cam.fovy = math.PI/2.0
 
 	_player_init()
+
+	_ctx.enemy.hp = 10
+	_ctx.enemy.hitbox_offset = 1.0
+	_ctx.enemy.hitbox_radius = 0.8
+
+	RES_load_texture(&_ctx.tung_tung_tex, RES_ID_IMAGE_TUNG_TUNG_PNG)
 }
 
 scn_game_uninit :: proc() {
 	_player_uninit()
-
-	LVL_uninit(&_ctx.level)
 
 	sg.destroy_image(_ctx.tex)
 	GFX_unload_font(&_ctx.font)
@@ -418,13 +284,6 @@ scn_game_uninit :: proc() {
 }
 
 scn_game_tick :: proc(input: INP_State, delta: f32) {
-	when DEV_BUILD {
-		if INP_is_key_pressed(input, .F1) {
-			WND_lock_mouse(false)
-			SCN_change(SCN_EDITOR_HANDLE)
-		}
-	}
-
 	if INP_is_key_pressed(input, .ESCAPE) {
 		WND_set_should_close(true)
 	}
@@ -437,17 +296,22 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 
 	_player_tick(input, delta)
 
-	{
+	_enemy_tick(&_ctx.enemy, delta)
+
+	if INP_is_mouse_pressed(input, .Left) {
 		ray_origin := _ctx.cam.position
 		ray_direction, _, _ := GFX_get_camera_forward_up_right(_ctx.cam)
-		ray_sphere_vector := M_Vec3f32{0.0, 1.0, 0.0} - ray_origin
+		ray_sphere_vector := (_ctx.enemy.position + {0.0, _ctx.enemy.hitbox_offset, 0.0}) - ray_origin
 		dot := linalg.dot(ray_sphere_vector, ray_direction)
 		distance := linalg.length(ray_sphere_vector)
-		d := (0.5*0.5 - (distance*distance - dot*dot))
+		d := (_ctx.enemy.hitbox_radius*_ctx.enemy.hitbox_radius - (distance*distance - dot*dot))
 		hit := d >= 0.0
-		// float d = radius*radius - (distance*distance - vector*vector);
-		if hit {
-			fmt.println("hit", distance)
+		if hit && distance <= 20.0 {
+			_ctx.enemy.hp -= 1
+			if _ctx.enemy.hp <= 0 {
+				// fmt.println("enemy dead")
+			}
+			fmt.println("hit! now enemy has", _ctx.enemy.hp, "hp")
 		}
 	}
 }
@@ -458,11 +322,15 @@ scn_game_draw :: proc(alpha: f32) {
 
 	GFX_begin_3d_renderer(&_ctx.ren3d, _ctx.cam)
 
-	LVL_draw(
-		&_ctx.level,
+	GFX_draw_3d_rect(
 		&_ctx.ren3d,
-		{_ctx.cam.position.x, _ctx.cam.position.z},
+		{-10.0, 0.0, -10.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{ 10.0, 0.0, -10.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{ 10.0, 0.0,  10.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{-10.0, 0.0,  10.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
 	)
+
+	_enemy_draw(_ctx.enemy)
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = {-3.0, 1.5, -2.0},
@@ -487,14 +355,6 @@ scn_game_draw :: proc(alpha: f32) {
 		color = {1.0, 1.0, 1.0},
 		falloff = 2.0,
 	})
-
-	GFX_draw_3d_billboard_rect(
-		&_ctx.ren3d,
-		{0.0, 1.0, 0.0},
-		{1.0, 1.0},
-		M_COLOR_CYAN,
-		true,
-	)
 
 	GFX_end_3d_renderer(&_ctx.ren3d)
 

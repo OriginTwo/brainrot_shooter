@@ -1,4 +1,4 @@
-- big arena
+- endless flat world splited up into chunks (maybe with some vegetation)
 - endless roguelike
 - drawn down abyss type gameplay
 	- energy charge up slowly
