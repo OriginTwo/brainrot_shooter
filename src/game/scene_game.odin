@@ -33,8 +33,6 @@ _ctx: struct {
 
 	enemies: [dynamic]_Enemy,
 
-	tung_tung_tex: GFX_Texture,
-
 	player_shoot_sound: AUD_Sound,
 	enemy_die_sound: AUD_Sound,
 
@@ -44,26 +42,34 @@ _ctx: struct {
 @(private="file") _PLAYER_WIDTH :: 1.0
 @(private="file") _PLAYER_HEIGHT :: 1.6
 @(private="file") _PLAYER_SPEED :: 6.0
-@(private="file") _PLAYER_SHOT_DISTANCE :: 20.0
+@(private="file") _PLAYER_SHOT_DISTANCE :: 30.0
+@(private="file") _PLAYER_SHOOT_ANIM_TICK_DURATION :: 3
 
 @(private="file")
 _Player :: struct {
 	hand_texture: GFX_Texture,
+	hand_shoot_texture: GFX_Texture,
 
 	desired_position: M_Vec3f32,
 	position: M_Vec3f32,
 	knockback_vel: M_Vec2f32,
 	bob_t: f32,
+
+	tick_since_last_shot: u32,
 }
 
 @(private="file")
 _player_init :: proc() {
 	RES_load_texture(&_ctx.player.hand_texture, RES_ID_IMAGE_PLAYER_HAND_PNG)
+	RES_load_texture(&_ctx.player.hand_shoot_texture, RES_ID_IMAGE_PLAYER_HAND_SHOOT_PNG)
+
+	_ctx.player.tick_since_last_shot = _PLAYER_SHOOT_ANIM_TICK_DURATION
 }
 
 @(private="file")
 _player_uninit :: proc() {
 	GFX_unload_texture(&_ctx.player.hand_texture)
+	GFX_unload_texture(&_ctx.player.hand_shoot_texture)
 }
 
 @(private="file")
@@ -121,8 +127,8 @@ _player_draw_hud :: proc() {
 	// hand
 	{
 		rect: M_Rect
-		rect.width = 330.0*scale_x
-		rect.height = 330.0*scale_y
+		rect.width = 350.0*scale_x
+		rect.height = 400.0*scale_y
 		rect.x = window_width*3.0/4.0 - rect.width/3.0
 		rect.y = window_height - rect.height*2.0/3.0
 		// move bob
@@ -130,7 +136,13 @@ _player_draw_hud :: proc() {
 		rect.y += abs(24.0*_ctx.player.bob_t*math.sin(f32(TIME_now())*6.0))
 		// idle bob
 		rect.y += 6.0*math.sin(f32(TIME_now()))
-		GFX_draw_2d_texture(&_ctx.ren2d, _ctx.player.hand_texture, {0.0, 0.0, 48.0, 48.0}, rect, M_COLOR_WHITE)
+
+		texture := (
+			_ctx.player.hand_texture if _ctx.player.tick_since_last_shot > _PLAYER_SHOOT_ANIM_TICK_DURATION
+			else _ctx.player.hand_shoot_texture
+		)
+
+		GFX_draw_2d_texture(&_ctx.ren2d, texture, {0.0, 0.0, 174.0, 203.0}, rect, M_COLOR_WHITE)
 	}
 
 	// crosshair
@@ -190,6 +202,10 @@ _player_draw_hud :: proc() {
 @(private="file")
 _Enemy_Kind :: enum {
 	Tung_Tung_Sahur,
+	Trallalero_Trallalla,
+	Brr_Brr_Patapim,
+	Chimpanzini_Bananini,
+	Assassino_Cappuccino,
 }
 
 @(private="file")
@@ -200,8 +216,9 @@ _Enemy :: struct {
 	attack_timer: TIME_Timer,
 }
 
-@(private="file", rodata)
+@(private="file")
 _ENEMY_DATABASE := [_Enemy_Kind]struct{
+	texture: GFX_Texture,
 	max_hp: int,
 	speed: f32,
 	hitbox_offset: f32,
@@ -211,13 +228,49 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 	attack_cooldown: TIME_Timer,
 }{
 	.Tung_Tung_Sahur = {
+		max_hp = 4,
+		speed = 5.0,
+		hitbox_offset = 1.2,
+		hitbox_radius = 1.0,
+		attack_knockback = 10.0,
+		attack_radius = 1.0,
+		attack_cooldown = 1.0,
+	},
+	.Trallalero_Trallalla = {
 		max_hp = 3,
+		speed = 5.5,
+		hitbox_offset = 1.0,
+		hitbox_radius = 1.0,
+		attack_knockback = 12.0,
+		attack_radius = 0.85,
+		attack_cooldown = 1.0,
+	},
+	.Brr_Brr_Patapim = {
+		max_hp = 6,
+		speed = 4.0,
+		hitbox_offset = 1.4,
+		hitbox_radius = 1.2,
+		attack_knockback = 18.0,
+		attack_radius = 1.2,
+		attack_cooldown = 1.4,
+	},
+	.Chimpanzini_Bananini = {
+		max_hp = 4,
 		speed = 5.0,
 		hitbox_offset = 1.0,
 		hitbox_radius = 0.8,
 		attack_knockback = 10.0,
-		attack_radius = 0.85,
-		attack_cooldown = 1.0,
+		attack_radius = 1.0,
+		attack_cooldown = 1.1,
+	},
+	.Assassino_Cappuccino = {
+		max_hp = 3,
+		speed = 5.5,
+		hitbox_offset = 0.8,
+		hitbox_radius = 0.8,
+		attack_knockback = 8.0,
+		attack_radius = 1.0,
+		attack_cooldown = 0.9,
 	},
 }
 
@@ -243,19 +296,18 @@ _enemy_tick :: proc(e: ^_Enemy, delta: f32) {
 @(private="file")
 _enemy_draw :: proc(e: _Enemy) {
 	data := _ENEMY_DATABASE[e.kind]
-	switch e.kind {
-	case .Tung_Tung_Sahur:
-		GFX_draw_3d_billboard_texture(
-			&_ctx.ren3d,
-			_ctx.tung_tung_tex.texture,
-			_ctx.tung_tung_tex.sampler,
-			e.position + {0.0, data.hitbox_offset, 0.0},
-			{data.hitbox_radius, data.hitbox_radius}*2.0,
-			{0.0, 0.0, 91.0, 211.0},
-			M_COLOR_WHITE,
-			true,
-		)
-	}
+	tex_width := sg.query_image_width(data.texture.texture)
+	tex_height := sg.query_image_height(data.texture.texture)
+	GFX_draw_3d_billboard_texture(
+		&_ctx.ren3d,
+		data.texture.texture,
+		data.texture.sampler,
+		e.position + {0.0, data.hitbox_offset, 0.0},
+		{data.hitbox_radius, data.hitbox_radius}*2.0,
+		{0.0, 0.0, f32(tex_width), f32(tex_height)},
+		M_COLOR_WHITE,
+		true,
+	)
 }
 
 scn_game_init :: proc() {
@@ -275,7 +327,11 @@ scn_game_init :: proc() {
 
 	_player_init()
 
-	RES_load_texture(&_ctx.tung_tung_tex, RES_ID_IMAGE_TUNG_TUNG_PNG)
+	RES_load_texture(&_ENEMY_DATABASE[.Tung_Tung_Sahur].texture, RES_ID_IMAGE_TUNG_TUNG_SAHUR_PNG)
+	RES_load_texture(&_ENEMY_DATABASE[.Trallalero_Trallalla].texture, RES_ID_IMAGE_TRALLALERO_TRALLALLA_PNG)
+	RES_load_texture(&_ENEMY_DATABASE[.Brr_Brr_Patapim].texture, RES_ID_IMAGE_BRR_BRR_PATAPIM_PNG)
+	RES_load_texture(&_ENEMY_DATABASE[.Chimpanzini_Bananini].texture, RES_ID_IMAGE_CHIMPANZINI_BANANINI_PNG)
+	RES_load_texture(&_ENEMY_DATABASE[.Assassino_Cappuccino].texture, RES_ID_IMAGE_ASSASSINO_CAPPUCCINO_PNG)
 
 	RES_load_sound(&_ctx.player_shoot_sound, RES_ID_SOUND_PLAYER_SHOOT_WAV)
 	RES_load_sound(&_ctx.enemy_die_sound, RES_ID_SOUND_ENEMY_DIE_WAV)
@@ -289,7 +345,9 @@ scn_game_uninit :: proc() {
 	AUD_unload_sound(&_ctx.player_shoot_sound)
 	AUD_unload_sound(&_ctx.enemy_die_sound)
 
-	GFX_unload_texture(&_ctx.tung_tung_tex)
+	for &data in _ENEMY_DATABASE {
+		GFX_unload_texture(&data.texture)
+	}
 
 	GFX_unload_font(&_ctx.font)
 	GFX_destroy_2d_renderer(&_ctx.ren2d)
@@ -315,7 +373,10 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 		_enemy_tick(&enemy, delta)
 	}
 
+	_ctx.player.tick_since_last_shot += 1
 	if INP_is_mouse_pressed(input, .Left) {
+		_ctx.player.tick_since_last_shot = 0
+
 		AUD_play_sound(&_ctx.player_shoot_sound)
 
 		ray_origin := _ctx.cam.position
@@ -366,10 +427,10 @@ scn_game_draw :: proc(alpha: f32) {
 
 	GFX_draw_3d_rect(
 		&_ctx.ren3d,
-		{-10.0, 0.0, -10.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{ 10.0, 0.0, -10.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{ 10.0, 0.0,  10.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{-10.0, 0.0,  10.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{-10000.0, 0.0, -10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{ 10000.0, 0.0, -10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{ 10000.0, 0.0,  10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{-10000.0, 0.0,  10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
 	)
 
 	for &enemy in _ctx.enemies {
@@ -377,28 +438,22 @@ scn_game_draw :: proc(alpha: f32) {
 	}
 
 	GFX_add_3d_light(&_ctx.ren3d, {
-		position = {-3.0, 1.5, -2.0},
-		intensity = 7.0,
-		radius = 9.0,
-		color = {1.0, 0.4, 0.4},
-		falloff = 1.0,
-	})
-
-	GFX_add_3d_light(&_ctx.ren3d, {
-		position = {3.0, 1.5, -2.0},
-		intensity = 7.0,
-		radius = 9.0,
-		color = {0.4, 0.4, 1.0},
-		falloff = 1.0,
-	})
-
-	GFX_add_3d_light(&_ctx.ren3d, {
 		position = _ctx.cam.position,
-		intensity = 2.0,
-		radius = 6.0,
+		intensity = 1.6,
+		radius = 12.0,
 		color = {1.0, 1.0, 1.0},
 		falloff = 2.0,
 	})
+
+	if _ctx.player.tick_since_last_shot < _PLAYER_SHOOT_ANIM_TICK_DURATION {
+		GFX_add_3d_light(&_ctx.ren3d, {
+			position = _ctx.cam.position,
+			intensity = 2.0,
+			radius = 5.0,
+			color = {0.9, 0.75, 0.15},
+			falloff = 2.0,
+		})
+	}
 
 	GFX_end_3d_renderer(&_ctx.ren3d)
 
@@ -423,33 +478,18 @@ scn_game_draw :: proc(alpha: f32) {
 
 	GFX_set_2d_layer(&_ctx.ren2d, 10)
 
-	GFX_draw_2d_string(
-		&_ctx.ren2d,
-		_ctx.font,
-		"Hello World!",
-		{200.0, 200.0},
-		M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, 1.0})),
-		3.0,
-	)
+	// GFX_draw_2d_string(
+	// 	&_ctx.ren2d,
+	// 	_ctx.font,
+	// 	"Hello World!",
+	// 	{200.0, 200.0},
+	// 	M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, 1.0})),
+	// 	3.0,
+	// )
 
 	_player_draw_hud()
 
 	GFX_end_2d_renderer(&_ctx.ren2d)
-
-	when DEV_BUILD {
-		im.SetNextWindowSize({200.0, 400.0}, .Once)
-		im.Begin("Debug")
-		{
-			im.SliderFloat("pos_x", &_ctx.cam.position.x, -10.0, 10.0)
-			im.SliderFloat("pos_y", &_ctx.cam.position.y, -10.0, 10.0)
-			im.SliderFloat("pos_z", &_ctx.cam.position.z, -10.0, 10.0)
-			im.SliderFloat("pitch", &_ctx.cam.pitch, -89.0, 89.0)
-			im.SliderFloat("yaw", &_ctx.cam.yaw, 0.0, 360.0)
-			im.SliderFloat("roll", &_ctx.cam.roll, -30.0, 30.0)
-			im.Checkbox("disable bloom", &_ctx.disable_bloom)
-		}
-		im.End()
-	}
 
 	GFX_end_frame()
 

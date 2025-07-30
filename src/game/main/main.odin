@@ -38,6 +38,7 @@ main :: proc() {
 	defer game.WND_destroy()
 
 	sdl.SetWindowMinimumSize(game.WND_get_handle(), 640, 360)
+	sdl.SetWindowAspectRatio(game.WND_get_handle(), 16.0/9.0, 16.0/9.0)
 
 	game.GFX_init(game.WND_get_handle(), game.WND_get_gl())
 	defer game.GFX_uninit()

@@ -1,7 +1,17 @@
-# DOING:
-	X player movement
-		X coyote timer (0.1-0.2s grace period after leaving ground during which jump can still occur)
-		- jump buffer (0.1-0.2s input window before landing that queues a jump)
+# TODO:
+	- player health
+	- player ammo
+	- player hit sound
+	- chance to drop items when enemy die
+		- ammo
+		- health
+	- enemy hit particle
+	- enemy die particle
+	- difficulty curve
+	- main menu
+	- option menu
+	- score
+	- game over screen
 
 # system/engine
 	X window              [WND]
@@ -16,7 +26,7 @@
 			X rect
 			X texture
 			X text
-		- 3d renderer
+		X 3d renderer
 			X triangle
 				X normal
 				X billboard
@@ -27,40 +37,14 @@
 				X normal
 				X billboard
 				X decal
-			- wireframe (for debugging)
 			X culling, face winding
 			X fog
 			X lighting
-			- shadow??
-		- post-processing effects
+		X post-processing effects
 			X bloom
-			- palettize
 	X audio               [AUD]
 		X 3d
 	- particle            [PART]
 	X scene               [SCN]
-	- asset               [ASST] // TODO: maybe rename to resource [RES]??
-	- state machine??     [STMC]
+	X resource            [RES]
 	- ui                  [UI]
-	- level               [LVL]
-	- entity              [ENT]
-
-# level editor
-	NOTE: when sectors are overlapping, assume that the current sector is the smallest one
-	X sector
-		X place
-		X select
-			X move
-			X deselect
-			X delete
-		X properties (floor height, ceiling height, link, texture, etc.)
-		X draw 2d view
-		X draw 3d view
-		X assign sector to chunks for optimization (for collision, editor, etc.)
-		X texture
-		X texture tiling
-		X match floor/ceiling y with another sector
-	- undo/redo ??
-	- save level   (json format)
-	- load level   (json format)
-	X export level (into raw binary that don't need any processing when load)
