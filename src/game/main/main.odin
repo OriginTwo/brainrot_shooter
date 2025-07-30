@@ -95,5 +95,7 @@ main :: proc() {
 		game.SCN_draw(f32(accumulator*game.TICKS_PER_SECOND))
 
 		game.SCN_process_pending()
+
+		game.AUD_update()
 	}
 }

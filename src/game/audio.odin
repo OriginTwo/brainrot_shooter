@@ -9,6 +9,7 @@ import ma "vendor:miniaudio"
 AUD_PLAYBACK_FORMAT :: ma.format.f32
 AUD_PLAYBACK_CHANNELS :: 2
 AUD_PLAYBACK_SAMPLE_RATE :: 44100
+AUD_MAX_SOUND_PLAYING :: 256
 
 AUD_Sound :: struct {
 	data: []byte,
@@ -67,19 +68,24 @@ AUD_uninit :: proc() {
 	ma.engine_uninit(&AUD__ctx.engine)
 }
 
-AUD_load_sound_from_file :: proc(sound: ^AUD_Sound, path: string) -> bool {
-	data, data_ok := os.read_entire_file(path)
-	if !data_ok {
-		log.warnf("AUD: failed to open sound file: %s", path)
-		return false
+AUD_update :: proc() {
+	for &is_taken, i in AUD__ctx.sound_slots_taken {
+		if !is_taken {
+			continue
+		}
+
+		if !ma.sound_is_playing(&AUD__ctx.sounds[i].sound) {
+			ma.sound_uninit(&AUD__ctx.sounds[i].sound)
+			ma.decoder_uninit(&AUD__ctx.sounds[i].decoder)
+			is_taken = false
+		}
 	}
-	sound.data = data
-	AUD_load_sound_from_memory(sound, data)
-	return true
 }
 
 AUD_load_sound_from_memory :: proc(sound: ^AUD_Sound, data: []byte) -> bool {
 	result: ma.result
+
+	sound.data = data
 
 	decoder_config := ma.decoder_config_init(
 		AUD_PLAYBACK_FORMAT,
@@ -114,28 +120,26 @@ AUD_load_sound_from_memory :: proc(sound: ^AUD_Sound, data: []byte) -> bool {
 }
 
 AUD_unload_sound :: proc(sound: ^AUD_Sound) {
-	if sound.decoder != {} {
-		ma.decoder_uninit(&sound.decoder)
-	}
+	ma.decoder_uninit(&sound.decoder)
 	ma.sound_uninit(&sound.sound)
-	if sound.data != nil {
-		delete(sound.data)
-	}
+	delete(sound.data)
 }
 
-AUD_load_music_from_file :: proc(music: ^AUD_Music, path: string) -> bool {
-	data, data_ok := os.read_entire_file(path)
-	if !data_ok {
-		log.warnf("AUD: failed to open music file: %s", path)
-		return false
+AUD_play_sound :: proc(sound: ^AUD_Sound) {
+	for &is_taken, i in AUD__ctx.sound_slots_taken {
+		if !is_taken {
+			is_taken = true
+			AUD_load_sound_from_memory(&AUD__ctx.sounds[i], sound.data)
+			ma.sound_start(&AUD__ctx.sounds[i].sound)
+			break
+		}
 	}
-	music.data = data
-	AUD_load_music_from_memory(music, data)
-	return true
 }
 
 AUD_load_music_from_memory :: proc(music: ^AUD_Music, data: []byte) -> bool {
 	result: ma.result
+
+	music.data = data
 
 	decoder_config := ma.decoder_config_init(
 		AUD_PLAYBACK_FORMAT,
@@ -170,13 +174,9 @@ AUD_load_music_from_memory :: proc(music: ^AUD_Music, data: []byte) -> bool {
 }
 
 AUD_unload_music :: proc(music: ^AUD_Music) {
-	if music.decoder != {} {
-		ma.decoder_uninit(&music.decoder)
-	}
+	ma.decoder_uninit(&music.decoder)
 	ma.sound_uninit(&music.sound)
-	if music.data != nil {
-		delete(music.data)
-	}
+	delete(music.data)
 }
 
 
@@ -186,6 +186,9 @@ AUD__ctx: struct {
 	resman: ma.resource_manager,
 	device: ma.device,
 	engine: ma.engine,
+
+	sound_slots_taken: [AUD_MAX_SOUND_PLAYING]bool,
+	sounds: [AUD_MAX_SOUND_PLAYING]AUD_Sound,
 }
 
 @(private="file")
