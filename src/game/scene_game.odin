@@ -5,8 +5,10 @@ import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:math/ease"
+import "core:math/rand"
 
 import sdl "vendor:sdl3"
+import ma "vendor:miniaudio"
 
 import im "lib:imgui"
 import sg "lib:sokol/gfx"
@@ -25,24 +27,24 @@ _ctx: struct {
 	ren3d: GFX_3D_Renderer,
 	ren_fx: GFX_Post_FX_Renderer,
 	font: GFX_Font,
-	tex: sg.Image,
-	smp: sg.Sampler,
 
 	cam: GFX_Camera,
 	player: _Player,
 
-	enemy: _Enemy,
+	enemies: [dynamic]_Enemy,
+
 	tung_tung_tex: GFX_Texture,
+
+	player_shoot_sound: AUD_Sound,
+	enemy_die_sound: AUD_Sound,
 
 	disable_bloom: bool,
 }
 
 @(private="file") _PLAYER_WIDTH :: 1.0
 @(private="file") _PLAYER_HEIGHT :: 1.6
-@(private="file") _PLAYER_SPEED :: 8.0
-@(private="file") _PLAYER_WALL_CHECK_RADIUS :: _PLAYER_WIDTH*2.0
-@(private="file") _PLAYER_LAND_ANIM_DURATION :: 0.4
-@(private="file") _PLAYER_COYOTE_TIME :: 0.1
+@(private="file") _PLAYER_SPEED :: 6.0
+@(private="file") _PLAYER_SHOT_DISTANCE :: 20.0
 
 @(private="file")
 _Player :: struct {
@@ -186,12 +188,37 @@ _player_draw_hud :: proc() {
 }
 
 @(private="file")
+_Enemy_Kind :: enum {
+	Tung_Tung_Sahur,
+}
+
+@(private="file")
 _Enemy :: struct {
-	position: M_Vec3f32,
+	kind: _Enemy_Kind,
 	hp: int,
+	position: M_Vec3f32,
+	attack_timer: TIME_Timer,
+}
+
+@(private="file", rodata)
+_ENEMY_DATABASE := [_Enemy_Kind]struct{
+	max_hp: int,
+	speed: f32,
 	hitbox_offset: f32,
 	hitbox_radius: f32,
-	attack_timer: TIME_Timer,
+	attack_knockback: f32,
+	attack_radius: f32,
+	attack_cooldown: TIME_Timer,
+}{
+	.Tung_Tung_Sahur = {
+		max_hp = 3,
+		speed = 5.0,
+		hitbox_offset = 1.0,
+		hitbox_radius = 0.8,
+		attack_knockback = 10.0,
+		attack_radius = 0.85,
+		attack_cooldown = 1.0,
+	},
 }
 
 @(private="file")
@@ -203,26 +230,32 @@ _enemy_tick :: proc(e: ^_Enemy, delta: f32) {
 	target := _ctx.player.position
 	dir := linalg.normalize0(target - e.position)
 
-	if linalg.length2(target - e.position) > e.hitbox_radius*e.hitbox_radius {
-		e.position += dir*2.0*delta
+	data := _ENEMY_DATABASE[e.kind]
+
+	if linalg.length2(target - e.position) > data.attack_radius*data.attack_radius {
+		e.position += dir*data.speed*delta
 	} else {
-		_ctx.player.knockback_vel = dir.xz*10.0
-		TIME_set_timer(&e.attack_timer, 1.0)
+		_ctx.player.knockback_vel = dir.xz*data.attack_knockback
+		TIME_set_timer(&e.attack_timer, data.attack_cooldown)
 	}
 }
 
 @(private="file")
 _enemy_draw :: proc(e: _Enemy) {
-	GFX_draw_3d_billboard_texture(
-		&_ctx.ren3d,
-		_ctx.tung_tung_tex.texture,
-		_ctx.tung_tung_tex.sampler,
-		e.position + {0.0, e.hitbox_offset, 0.0},
-		{e.hitbox_radius, e.hitbox_radius}*2.0,
-		{0.0, 0.0, 91.0, 211.0},
-		M_COLOR_WHITE,
-		true,
-	)
+	data := _ENEMY_DATABASE[e.kind]
+	switch e.kind {
+	case .Tung_Tung_Sahur:
+		GFX_draw_3d_billboard_texture(
+			&_ctx.ren3d,
+			_ctx.tung_tung_tex.texture,
+			_ctx.tung_tung_tex.sampler,
+			e.position + {0.0, data.hitbox_offset, 0.0},
+			{data.hitbox_radius, data.hitbox_radius}*2.0,
+			{0.0, 0.0, 91.0, 211.0},
+			M_COLOR_WHITE,
+			true,
+		)
+	}
 }
 
 scn_game_init :: proc() {
@@ -237,45 +270,27 @@ scn_game_init :: proc() {
 		GFX_unload_image(&img)
 	}
 
-	{
-		img: GFX_Image
-		GFX_load_image_from_file(&img, "res/image/HBD_2021.png")
-		_ctx.tex = sg.make_image({
-			type = ._2D,
-			width = i32(img.width),
-			height = i32(img.height),
-			num_slices = 1,
-			num_mipmaps = 1,
-			usage = .IMMUTABLE,
-			pixel_format = .RGBA8,
-			sample_count = 1,
-			data = {
-				subimage = {0 = {0 = {
-					ptr = raw_data(img.pixels),
-					size = len(img.pixels)*size_of(img.pixels[0]),
-				}}},
-			},
-		})
-		_ctx.smp = GFX_get_default_2d_sampler(_ctx.ren2d)
-		GFX_unload_image(&img)
-	}
-
 	_ctx.cam.position.y = 1.0
 	_ctx.cam.fovy = math.PI/2.0
 
 	_player_init()
 
-	_ctx.enemy.hp = 10
-	_ctx.enemy.hitbox_offset = 1.0
-	_ctx.enemy.hitbox_radius = 0.8
-
 	RES_load_texture(&_ctx.tung_tung_tex, RES_ID_IMAGE_TUNG_TUNG_PNG)
+
+	RES_load_sound(&_ctx.player_shoot_sound, RES_ID_SOUND_PLAYER_SHOOT_WAV)
+	RES_load_sound(&_ctx.enemy_die_sound, RES_ID_SOUND_ENEMY_DIE_WAV)
 }
 
 scn_game_uninit :: proc() {
+	delete(_ctx.enemies)
+
 	_player_uninit()
 
-	sg.destroy_image(_ctx.tex)
+	AUD_unload_sound(&_ctx.player_shoot_sound)
+	AUD_unload_sound(&_ctx.enemy_die_sound)
+
+	GFX_unload_texture(&_ctx.tung_tung_tex)
+
 	GFX_unload_font(&_ctx.font)
 	GFX_destroy_2d_renderer(&_ctx.ren2d)
 	GFX_destroy_3d_renderer(&_ctx.ren3d)
@@ -296,23 +311,50 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 
 	_player_tick(input, delta)
 
-	_enemy_tick(&_ctx.enemy, delta)
+	for &enemy in _ctx.enemies {
+		_enemy_tick(&enemy, delta)
+	}
 
 	if INP_is_mouse_pressed(input, .Left) {
+		AUD_play_sound(&_ctx.player_shoot_sound)
+
 		ray_origin := _ctx.cam.position
 		ray_direction, _, _ := GFX_get_camera_forward_up_right(_ctx.cam)
-		ray_sphere_vector := (_ctx.enemy.position + {0.0, _ctx.enemy.hitbox_offset, 0.0}) - ray_origin
-		dot := linalg.dot(ray_sphere_vector, ray_direction)
-		distance := linalg.length(ray_sphere_vector)
-		d := (_ctx.enemy.hitbox_radius*_ctx.enemy.hitbox_radius - (distance*distance - dot*dot))
-		hit := d >= 0.0
-		if hit && distance <= 20.0 {
-			_ctx.enemy.hp -= 1
-			if _ctx.enemy.hp <= 0 {
-				// fmt.println("enemy dead")
+
+		closest_enemy_distance: f32 = 99999.0
+		closest_enemy_index := -1
+
+		for enemy, i in _ctx.enemies {
+			data := _ENEMY_DATABASE[enemy.kind]
+			ray_sphere_vector := (enemy.position + {0.0, data.hitbox_offset, 0.0}) - ray_origin
+			dot := linalg.dot(ray_sphere_vector, ray_direction)
+			distance := linalg.length(ray_sphere_vector)
+			d := (data.hitbox_radius*data.hitbox_radius - (distance*distance - dot*dot))
+			hit := d >= 0.0
+			if hit && distance <= _PLAYER_SHOT_DISTANCE && distance < closest_enemy_distance {
+				closest_enemy_distance = distance
+				closest_enemy_index = i
 			}
-			fmt.println("hit! now enemy has", _ctx.enemy.hp, "hp")
 		}
+
+		if closest_enemy_index != -1 {
+			_ctx.enemies[closest_enemy_index].hp -= 1
+			if _ctx.enemies[closest_enemy_index].hp <= 0 {
+				AUD_play_sound(&_ctx.enemy_die_sound)
+				unordered_remove(&_ctx.enemies, closest_enemy_index)
+			}
+		}
+	}
+
+	if len(_ctx.enemies) < 5 {
+		enemy: _Enemy
+		enemy.kind = rand.choice_enum(_Enemy_Kind)
+		enemy.hp = _ENEMY_DATABASE[enemy.kind].max_hp
+
+		dir := linalg.normalize0(M_Vec2f32{rand.float32(), rand.float32()}*2.0 - 1.0)
+		enemy.position.xz = _ctx.player.position.xz + dir*30.0
+
+		append(&_ctx.enemies, enemy)
 	}
 }
 
@@ -330,7 +372,9 @@ scn_game_draw :: proc(alpha: f32) {
 		{-10.0, 0.0,  10.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
 	)
 
-	_enemy_draw(_ctx.enemy)
+	for &enemy in _ctx.enemies {
+		_enemy_draw(enemy)
+	}
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = {-3.0, 1.5, -2.0},
