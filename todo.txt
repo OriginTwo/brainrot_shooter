@@ -7,7 +7,7 @@
 		X health
 		X pickup sound
 	X enemy hit particle
-	- difficulty curve
+	X difficulty curve
 	- main menu
 	- option menu
 	- score

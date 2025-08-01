@@ -1273,7 +1273,7 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 		proj = linalg.matrix_flatten(ren.proj_mat),
 	}
 
-	for i in 0..<ren.num_lights {
+	for i in 0..<min(ren.num_lights, GFX__MAX_3D_LIGHT_IN_SHADER) {
 		light := close_lights[i]
 		vertex_param.light_data[i] = {light.position.x, light.position.y, light.position.z, 0.0}
 	}
@@ -1285,7 +1285,7 @@ GFX_end_3d_renderer :: proc(ren: ^GFX_3D_Renderer) {
 		light_count = i32(ren.num_lights),
 	}
 
-	for i in 0..<ren.num_lights {
+	for i in 0..<min(ren.num_lights, GFX__MAX_3D_LIGHT_IN_SHADER) {
 		light := close_lights[i]
 		fragment_param.light_data1[i] = {light.color.r, light.color.g, light.color.b, light.radius}
 		fragment_param.light_data2[i] = {light.intensity, light.falloff, 0.0, 0.0}
@@ -1823,8 +1823,8 @@ GFX_draw_3d_decal_texture :: proc(
 
 
 
-@(private="file") GFX__MAX_3D_LIGHT :: 200
 @(private="file") GFX__MAX_3D_LIGHT_IN_SHADER :: 16
+@(private="file") GFX__MAX_3D_LIGHT :: GFX__MAX_3D_LIGHT_IN_SHADER
 
 @(private="file")
 GFX__3D_Index :: u32

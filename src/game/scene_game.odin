@@ -21,6 +21,8 @@ SCN_GAME_CALLBACKS :: SCN_Callbacks{
 	scn_game_draw,
 }
 
+@(private="file") _DIFFICULTY_INCREASE_INTERVAL :: 30.0
+
 @(private="file")
 _ctx: struct {
 	ren2d: GFX_2D_Renderer,
@@ -30,6 +32,9 @@ _ctx: struct {
 
 	cam: GFX_Camera,
 	player: _Player,
+
+	max_enemies: int,
+	max_enemies_timer: TIME_Timer,
 
 	enemies: [dynamic]_Enemy,
 	pickups: [dynamic]_Pickup,
@@ -463,6 +468,9 @@ scn_game_init :: proc() {
 
 	_player_init()
 
+	_ctx.max_enemies = 4
+	TIME_set_timer(&_ctx.max_enemies_timer, _DIFFICULTY_INCREASE_INTERVAL)
+
 	RES_load_texture(&_ctx.hp_pickup_tex, RES_ID_IMAGE_HP_PICKUP_PNG)
 	RES_load_texture(&_ctx.ammo_pickup_tex, RES_ID_IMAGE_AMMO_PICKUP_PNG)
 
@@ -623,13 +631,18 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 		}
 	}
 
-	if len(_ctx.enemies) < 5 {
+	if TIME_is_timer_timeout(_ctx.max_enemies_timer) {
+		TIME_set_timer(&_ctx.max_enemies_timer, _DIFFICULTY_INCREASE_INTERVAL)
+		_ctx.max_enemies += 2
+	}
+
+	if len(_ctx.enemies) < _ctx.max_enemies {
 		enemy: _Enemy
 		enemy.kind = rand.choice_enum(_Enemy_Kind)
 		enemy.hp = _ENEMY_DATABASE[enemy.kind].max_hp
 
 		dir := linalg.normalize0(M_Vec2f32{rand.float32(), rand.float32()}*2.0 - 1.0)
-		enemy.position.xz = _ctx.player.position.xz + dir*30.0
+		enemy.position.xz = _ctx.player.position.xz + dir*40.0
 
 		append(&_ctx.enemies, enemy)
 	}
@@ -642,24 +655,6 @@ scn_game_draw :: proc(alpha: f32) {
 	GFX_clear_background(M_FCOLOR_BLACK)
 
 	GFX_begin_3d_renderer(&_ctx.ren3d, _ctx.cam)
-
-	GFX_draw_3d_rect(
-		&_ctx.ren3d,
-		{-10000.0, 0.0, -10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{ 10000.0, 0.0, -10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{ 10000.0, 0.0,  10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{-10000.0, 0.0,  10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-	)
-
-	for &enemy in _ctx.enemies {
-		_enemy_draw(enemy)
-	}
-
-	for &pickup in _ctx.pickups {
-		_pickup_draw(pickup)
-	}
-
-	PART_draw_emitter(&_ctx.enemy_hit_particle_emitter, &_ctx.ren3d)
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = _ctx.cam.position,
@@ -678,6 +673,24 @@ scn_game_draw :: proc(alpha: f32) {
 			falloff = 2.0,
 		})
 	}
+
+	GFX_draw_3d_rect(
+		&_ctx.ren3d,
+		{-10000.0, 0.0, -10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{ 10000.0, 0.0, -10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{ 10000.0, 0.0,  10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{-10000.0, 0.0,  10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+	)
+
+	for &enemy in _ctx.enemies {
+		_enemy_draw(enemy)
+	}
+
+	for &pickup in _ctx.pickups {
+		_pickup_draw(pickup)
+	}
+
+	PART_draw_emitter(&_ctx.enemy_hit_particle_emitter, &_ctx.ren3d)
 
 	GFX_end_3d_renderer(&_ctx.ren3d)
 
