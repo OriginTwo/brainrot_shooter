@@ -54,12 +54,13 @@ _Player :: struct {
 	hand_texture: GFX_Texture,
 	hand_shoot_texture: GFX_Texture,
 
+	hp: int,
+	ammo: int,
+
 	desired_position: M_Vec3f32,
 	position: M_Vec3f32,
 	knockback_vel: M_Vec2f32,
 	bob_t: f32,
-
-	ammo: int,
 
 	tick_since_last_shot: u32,
 }
@@ -71,6 +72,7 @@ _player_init :: proc() {
 	RES_load_texture(&p.hand_texture, RES_ID_IMAGE_PLAYER_HAND_PNG)
 	RES_load_texture(&p.hand_shoot_texture, RES_ID_IMAGE_PLAYER_HAND_SHOOT_PNG)
 
+	p.hp = 100
 	p.ammo = 30
 
 	p.tick_since_last_shot = _PLAYER_SHOOT_ANIM_TICK_DURATION
@@ -238,7 +240,7 @@ _player_draw_hud :: proc() {
 		GFX_draw_2d_string(
 			&_ctx.ren2d,
 			_ctx.font,
-			fmt.tprintf("HP: %d", 23),
+			fmt.tprintf("HP: %d", p.hp),
 			{8.0*scale, y},
 			M_COLOR_WHITE,
 			TEXT_SCALE*scale,
@@ -270,6 +272,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 	speed: f32,
 	hitbox_offset: f32,
 	hitbox_radius: f32,
+	attack_damage: int,
 	attack_knockback: f32,
 	attack_radius: f32,
 	attack_cooldown: TIME_Timer,
@@ -279,6 +282,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 		speed = 5.0,
 		hitbox_offset = 1.2,
 		hitbox_radius = 1.0,
+		attack_damage = 8,
 		attack_knockback = 10.0,
 		attack_radius = 1.0,
 		attack_cooldown = 1.0,
@@ -288,6 +292,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 		speed = 5.5,
 		hitbox_offset = 1.0,
 		hitbox_radius = 1.0,
+		attack_damage = 5,
 		attack_knockback = 12.0,
 		attack_radius = 0.85,
 		attack_cooldown = 1.0,
@@ -297,6 +302,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 		speed = 4.0,
 		hitbox_offset = 1.4,
 		hitbox_radius = 1.2,
+		attack_damage = 15,
 		attack_knockback = 18.0,
 		attack_radius = 1.2,
 		attack_cooldown = 1.4,
@@ -306,6 +312,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 		speed = 5.0,
 		hitbox_offset = 1.0,
 		hitbox_radius = 0.8,
+		attack_damage = 8,
 		attack_knockback = 10.0,
 		attack_radius = 1.0,
 		attack_cooldown = 1.1,
@@ -315,6 +322,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 		speed = 5.5,
 		hitbox_offset = 0.8,
 		hitbox_radius = 0.8,
+		attack_damage = 5,
 		attack_knockback = 8.0,
 		attack_radius = 1.0,
 		attack_cooldown = 0.9,
@@ -335,6 +343,8 @@ _enemy_tick :: proc(e: ^_Enemy, delta: f32) {
 	if linalg.length2(target - e.position) > data.attack_radius*data.attack_radius {
 		e.position += dir*data.speed*delta
 	} else {
+		AUD_play_sound(&_ctx.player_hit_sound)
+		_ctx.player.hp -= data.attack_damage
 		_ctx.player.knockback_vel = dir.xz*data.attack_knockback
 		TIME_set_timer(&e.attack_timer, data.attack_cooldown)
 	}

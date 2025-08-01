@@ -1,7 +1,7 @@
 # TODO:
-	- player health
-	- player ammo
-	- player hit sound
+	X player health
+	X player ammo
+	X player hit sound
 	- chance to drop items when enemy die
 		- ammo
 		- health
