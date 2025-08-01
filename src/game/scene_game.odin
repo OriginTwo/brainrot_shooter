@@ -32,17 +32,24 @@ _ctx: struct {
 	player: _Player,
 
 	enemies: [dynamic]_Enemy,
+	pickups: [dynamic]_Pickup,
+
+	hp_pickup_tex: GFX_Texture,
+	ammo_pickup_tex: GFX_Texture,
 
 	player_hit_sound: AUD_Sound,
 	player_shoot_sound: AUD_Sound,
 	player_shoot_no_ammo_sound: AUD_Sound,
 	enemy_die_sound: AUD_Sound,
+	pickup_sound: AUD_Sound,
 
 	enemy_hit_particle_emitter: PART_Emitter,
 
 	disable_bloom: bool,
 }
 
+@(private="file") _PLAYER_MAX_HP :: 100
+@(private="file") _PLAYER_MAX_AMMO :: 999
 @(private="file") _PLAYER_WIDTH :: 1.0
 @(private="file") _PLAYER_HEIGHT :: 1.6
 @(private="file") _PLAYER_SPEED :: 6.0
@@ -72,7 +79,7 @@ _player_init :: proc() {
 	RES_load_texture(&p.hand_texture, RES_ID_IMAGE_PLAYER_HAND_PNG)
 	RES_load_texture(&p.hand_shoot_texture, RES_ID_IMAGE_PLAYER_HAND_SHOOT_PNG)
 
-	p.hp = 100
+	p.hp = _PLAYER_MAX_HP
 	p.ammo = 30
 
 	p.tick_since_last_shot = _PLAYER_SHOOT_ANIM_TICK_DURATION
@@ -279,7 +286,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 }{
 	.Tung_Tung_Sahur = {
 		max_hp = 4,
-		speed = 5.0,
+		speed = 4.5,
 		hitbox_offset = 1.2,
 		hitbox_radius = 1.0,
 		attack_damage = 8,
@@ -289,7 +296,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 	},
 	.Trallalero_Trallalla = {
 		max_hp = 3,
-		speed = 5.5,
+		speed = 5.0,
 		hitbox_offset = 1.0,
 		hitbox_radius = 1.0,
 		attack_damage = 5,
@@ -299,7 +306,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 	},
 	.Brr_Brr_Patapim = {
 		max_hp = 6,
-		speed = 4.0,
+		speed = 3.5,
 		hitbox_offset = 1.4,
 		hitbox_radius = 1.2,
 		attack_damage = 15,
@@ -309,7 +316,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 	},
 	.Chimpanzini_Bananini = {
 		max_hp = 4,
-		speed = 5.0,
+		speed = 4.5,
 		hitbox_offset = 1.0,
 		hitbox_radius = 0.8,
 		attack_damage = 8,
@@ -319,7 +326,7 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 	},
 	.Assassino_Cappuccino = {
 		max_hp = 3,
-		speed = 5.5,
+		speed = 5.0,
 		hitbox_offset = 0.8,
 		hitbox_radius = 0.8,
 		attack_damage = 5,
@@ -367,6 +374,78 @@ _enemy_draw :: proc(e: _Enemy) {
 	)
 }
 
+@(private="file") _MAX_PICKUP :: 100
+@(private="file") _PICKUP_VISIBILITY_RADIUS :: 100.0
+@(private="file") _PICKUP_RADIUS :: 2.0
+@(private="file") _PICKUP_SPRITE_SIZE :: 1.0
+@(private="file") _PICKUP_GRAVITY :: 20.0
+
+@(private="file")
+_Pickup_Kind :: enum {
+	Hp,
+	Ammo,
+}
+
+@(private="file")
+_Pickup :: struct {
+	kind: _Pickup_Kind,
+	position: M_Vec3f32,
+	vel: M_Vec3f32,
+}
+
+@(private="file")
+_pickup_tick :: proc(p: ^_Pickup, delta: f32) -> bool {
+	if p.position.y > 0.0 {
+		p.vel.y -= _PICKUP_GRAVITY*delta
+		p.position += p.vel*delta
+	} else {
+		p.position.y = 0.0
+	}
+
+	dist_sqr := linalg.length2(_ctx.player.position - p.position)
+	if dist_sqr <= _PICKUP_RADIUS*_PICKUP_RADIUS {
+		return true
+	}
+	return false
+}
+
+@(private="file")
+_pickup_draw :: proc(p: _Pickup) {
+	if linalg.length2(_ctx.player.position - p.position) > _PICKUP_VISIBILITY_RADIUS*_PICKUP_VISIBILITY_RADIUS {
+		return
+	}
+
+	tex: GFX_Texture
+	switch p.kind {
+	case .Hp:   tex = _ctx.hp_pickup_tex
+	case .Ammo: tex = _ctx.ammo_pickup_tex
+	}
+
+	tex_width := sg.query_image_width(tex.texture)
+	tex_height := sg.query_image_height(tex.texture)
+
+	center := p.position + {0.0, _PICKUP_SPRITE_SIZE/2.0, 0.0}
+
+	GFX_draw_3d_billboard_texture(
+		&_ctx.ren3d,
+		tex.texture,
+		tex.sampler,
+		center,
+		{_PICKUP_SPRITE_SIZE, _PICKUP_SPRITE_SIZE},
+		{0.0, 0.0, f32(tex_width), f32(tex_height)},
+		M_COLOR_WHITE,
+		true,
+	)
+
+	GFX_add_3d_light(&_ctx.ren3d, {
+		position = center,
+		intensity = 1.0,
+		radius = 4.0,
+		color = {0.0, 1.0, 1.0},
+		falloff = 2.5,
+	})
+}
+
 scn_game_init :: proc() {
 	GFX_create_2d_renderer(&_ctx.ren2d)
 	GFX_create_3d_renderer(&_ctx.ren3d, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
@@ -384,6 +463,9 @@ scn_game_init :: proc() {
 
 	_player_init()
 
+	RES_load_texture(&_ctx.hp_pickup_tex, RES_ID_IMAGE_HP_PICKUP_PNG)
+	RES_load_texture(&_ctx.ammo_pickup_tex, RES_ID_IMAGE_AMMO_PICKUP_PNG)
+
 	RES_load_texture(&_ENEMY_DATABASE[.Tung_Tung_Sahur].texture, RES_ID_IMAGE_TUNG_TUNG_SAHUR_PNG)
 	RES_load_texture(&_ENEMY_DATABASE[.Trallalero_Trallalla].texture, RES_ID_IMAGE_TRALLALERO_TRALLALLA_PNG)
 	RES_load_texture(&_ENEMY_DATABASE[.Brr_Brr_Patapim].texture, RES_ID_IMAGE_BRR_BRR_PATAPIM_PNG)
@@ -394,6 +476,7 @@ scn_game_init :: proc() {
 	RES_load_sound(&_ctx.player_shoot_sound, RES_ID_SOUND_PLAYER_SHOOT_WAV)
 	RES_load_sound(&_ctx.player_shoot_no_ammo_sound, RES_ID_SOUND_PLAYER_SHOOT_NO_AMMO_WAV)
 	RES_load_sound(&_ctx.enemy_die_sound, RES_ID_SOUND_ENEMY_DIE_WAV)
+	RES_load_sound(&_ctx.pickup_sound, RES_ID_SOUND_PICKUP_WAV)
 
 	_ctx.enemy_hit_particle_emitter = {
 		particles_per_emission = 16,
@@ -411,6 +494,7 @@ scn_game_uninit :: proc() {
 	PART_destroy_emitter(&_ctx.enemy_hit_particle_emitter)
 
 	delete(_ctx.enemies)
+	delete(_ctx.pickups)
 
 	_player_uninit()
 
@@ -418,10 +502,14 @@ scn_game_uninit :: proc() {
 	AUD_unload_sound(&_ctx.player_shoot_sound)
 	AUD_unload_sound(&_ctx.player_shoot_no_ammo_sound)
 	AUD_unload_sound(&_ctx.enemy_die_sound)
+	AUD_unload_sound(&_ctx.pickup_sound)
 
 	for &data in _ENEMY_DATABASE {
 		GFX_unload_texture(&data.texture)
 	}
+
+	GFX_unload_texture(&_ctx.hp_pickup_tex)
+	GFX_unload_texture(&_ctx.ammo_pickup_tex)
 
 	GFX_unload_font(&_ctx.font)
 	GFX_destroy_2d_renderer(&_ctx.ren2d)
@@ -445,6 +533,21 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 
 	for &enemy in _ctx.enemies {
 		_enemy_tick(&enemy, delta)
+	}
+
+	#reverse for &pickup, i in _ctx.pickups {
+		if _pickup_tick(&pickup, delta) {
+			AUD_play_sound(&_ctx.pickup_sound)
+
+			switch pickup.kind {
+			case .Hp: _ctx.player.hp = min(_ctx.player.hp + 10, _PLAYER_MAX_HP)
+			case .Ammo:
+				amount := 5 + rand.int_max(4)
+				_ctx.player.ammo = min(_ctx.player.ammo + amount, _PLAYER_MAX_AMMO)
+			}
+
+			ordered_remove(&_ctx.pickups, i)
+		}
 	}
 
 	_ctx.player.tick_since_last_shot += 1
@@ -476,14 +579,42 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 
 			if closest_enemy_index != -1 {
 				enemy := &_ctx.enemies[closest_enemy_index]
+				enemy_center := enemy.position + {0.0, _ENEMY_DATABASE[enemy.kind].hitbox_offset, 0.0}
 				PART_emit_particle(
 					&_ctx.enemy_hit_particle_emitter,
-					enemy.position + {0.0, _ENEMY_DATABASE[enemy.kind].hitbox_offset, 0.0},
+					enemy_center,
 					ray_direction,
 				)
 				enemy.hp -= 1
 				if enemy.hp <= 0 {
 					AUD_play_sound(&_ctx.enemy_die_sound)
+
+					rand_num := rand.float32()
+
+					_spawn_pickup :: proc(kind: _Pickup_Kind, position: M_Vec3f32) {
+						if len(_ctx.pickups) >= _MAX_PICKUP {
+							pop_front(&_ctx.pickups)
+						}
+
+						pickup: _Pickup
+						pickup.kind = kind
+						pickup.position = position
+						pickup.vel = linalg.normalize0(M_Vec3f32{
+							rand.float32_range(-1.0, 1.0),
+							rand.float32_range(-1.0, 1.0),
+							rand.float32_range(-1.0, 1.0),
+						})*rand.float32_range(2.0, 5.0)
+						append(&_ctx.pickups, pickup)
+					}
+
+					switch rand_num {
+					case 0.00..<0.80: _spawn_pickup(.Ammo, enemy_center)
+					case 0.80..<0.95: _spawn_pickup(.Hp, enemy_center)
+					case 0.95..<1.00:
+						_spawn_pickup(.Ammo, enemy_center)
+						_spawn_pickup(.Hp, enemy_center)
+					}
+
 					unordered_remove(&_ctx.enemies, closest_enemy_index)
 				}
 			}
@@ -522,6 +653,10 @@ scn_game_draw :: proc(alpha: f32) {
 
 	for &enemy in _ctx.enemies {
 		_enemy_draw(enemy)
+	}
+
+	for &pickup in _ctx.pickups {
+		_pickup_draw(pickup)
 	}
 
 	PART_draw_emitter(&_ctx.enemy_hit_particle_emitter, &_ctx.ren3d)
@@ -566,15 +701,6 @@ scn_game_draw :: proc(alpha: f32) {
 	}
 
 	GFX_set_2d_layer(&_ctx.ren2d, 10)
-
-	// GFX_draw_2d_string(
-	// 	&_ctx.ren2d,
-	// 	_ctx.font,
-	// 	"Hello World!",
-	// 	{200.0, 200.0},
-	// 	M_urgba_from_frgba(M_frgba_from_hsva({math.sin(f32(TIME_now()))*0.5 + 0.5, 1.0, 1.0, 1.0})),
-	// 	3.0,
-	// )
 
 	_player_draw_hud()
 
