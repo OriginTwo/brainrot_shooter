@@ -8,11 +8,12 @@
 		X pickup sound
 	X enemy hit particle
 	X difficulty curve
-	- main menu
+	X main menu
 	- option menu
 	- score
 	- game over screen
-	- minimap??
+	- minimap
+	- hit indicator
 
 # system/engine
 	X window              [WND]

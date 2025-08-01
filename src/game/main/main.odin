@@ -49,13 +49,11 @@ main :: proc() {
 	game.RES_init()
 	defer game.RES_uninit()
 
-	// PART_init()
-	// defer PART_uninit()
-
 	game.SCN_init()
 	defer game.SCN_uninit()
+	game.SCN_register(game.SCN_MAIN_MENU_HANDLE, game.SCN_MAIN_MENU_CALLBACKS)
 	game.SCN_register(game.SCN_GAME_HANDLE, game.SCN_GAME_CALLBACKS)
-	game.SCN_set_initial(game.SCN_GAME_HANDLE)
+	game.SCN_set_initial(game.SCN_MAIN_MENU_HANDLE)
 
 	frame_input_state: game.INP_State
 	tick_input_state: game.INP_State

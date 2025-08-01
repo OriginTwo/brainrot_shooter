@@ -42,6 +42,7 @@ _ctx: struct {
 	hp_pickup_tex: GFX_Texture,
 	ammo_pickup_tex: GFX_Texture,
 
+	game_start_sound: AUD_Sound,
 	player_hit_sound: AUD_Sound,
 	player_shoot_sound: AUD_Sound,
 	player_shoot_no_ammo_sound: AUD_Sound,
@@ -49,8 +50,6 @@ _ctx: struct {
 	pickup_sound: AUD_Sound,
 
 	enemy_hit_particle_emitter: PART_Emitter,
-
-	disable_bloom: bool,
 }
 
 @(private="file") _PLAYER_MAX_HP :: 100
@@ -452,6 +451,8 @@ _pickup_draw :: proc(p: _Pickup) {
 }
 
 scn_game_init :: proc() {
+	WND_lock_mouse(true)
+
 	GFX_create_2d_renderer(&_ctx.ren2d)
 	GFX_create_3d_renderer(&_ctx.ren3d, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
 	GFX_create_post_fx_renderer(&_ctx.ren_fx, VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
@@ -480,6 +481,7 @@ scn_game_init :: proc() {
 	RES_load_texture(&_ENEMY_DATABASE[.Chimpanzini_Bananini].texture, RES_ID_IMAGE_CHIMPANZINI_BANANINI_PNG)
 	RES_load_texture(&_ENEMY_DATABASE[.Assassino_Cappuccino].texture, RES_ID_IMAGE_ASSASSINO_CAPPUCCINO_PNG)
 
+	RES_load_sound(&_ctx.game_start_sound, RES_ID_SOUND_GAME_START_WAV)
 	RES_load_sound(&_ctx.player_hit_sound, RES_ID_SOUND_PLAYER_HIT_WAV)
 	RES_load_sound(&_ctx.player_shoot_sound, RES_ID_SOUND_PLAYER_SHOOT_WAV)
 	RES_load_sound(&_ctx.player_shoot_no_ammo_sound, RES_ID_SOUND_PLAYER_SHOOT_NO_AMMO_WAV)
@@ -496,6 +498,8 @@ scn_game_init :: proc() {
 		max_vel = 7.0,
 		color = {255, 0, 0, 255},
 	}
+
+	AUD_play_sound(&_ctx.game_start_sound)
 }
 
 scn_game_uninit :: proc() {
@@ -506,6 +510,7 @@ scn_game_uninit :: proc() {
 
 	_player_uninit()
 
+	AUD_unload_sound(&_ctx.game_start_sound)
 	AUD_unload_sound(&_ctx.player_hit_sound)
 	AUD_unload_sound(&_ctx.player_shoot_sound)
 	AUD_unload_sound(&_ctx.player_shoot_no_ammo_sound)
@@ -524,19 +529,11 @@ scn_game_uninit :: proc() {
 	GFX_destroy_3d_renderer(&_ctx.ren3d)
 	GFX_destroy_post_fx_renderer(&_ctx.ren_fx)
 	_ctx = {}
+
+	WND_lock_mouse(false)
 }
 
 scn_game_tick :: proc(input: INP_State, delta: f32) {
-	if INP_is_key_pressed(input, .ESCAPE) {
-		WND_set_should_close(true)
-	}
-
-	if INP_is_key_pressed(input, .TAB) {
-		@(static) lock_mouse := false
-		lock_mouse = !lock_mouse
-		WND_lock_mouse(lock_mouse)
-	}
-
 	_player_tick(input, delta)
 
 	for &enemy in _ctx.enemies {
@@ -699,19 +696,7 @@ scn_game_draw :: proc(alpha: f32) {
 	win_size: [2]i32
 	sdl.GetWindowSize(WND_get_handle(), &win_size.x, &win_size.y)
 
-	if _ctx.disable_bloom {
-		w := f32(sg.query_image_width(_ctx.ren3d.color_texture))
-		h := f32(sg.query_image_height(_ctx.ren3d.color_texture))
-		GFX_draw_2d_texture(
-			&_ctx.ren2d,
-			{_ctx.ren3d.color_texture, GFX_get_default_2d_sampler(_ctx.ren2d)},
-			{0.0, h, w, -h},
-			{0.0, 0.0, f32(win_size.x), f32(win_size.y)},
-			M_COLOR_WHITE,
-		)
-	} else {
-		GFX_draw_post_fx(&_ctx.ren_fx, &_ctx.ren2d, &_ctx.ren3d)
-	}
+	GFX_draw_post_fx(&_ctx.ren_fx, &_ctx.ren2d, &_ctx.ren3d)
 
 	GFX_set_2d_layer(&_ctx.ren2d, 10)
 

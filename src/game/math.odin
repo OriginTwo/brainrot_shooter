@@ -89,6 +89,10 @@ M_range2f32_dimension :: proc(r: M_Range2f32) -> M_Vec2f32 {
 	}
 }
 
+M_is_point_in_rect :: proc(p: M_Vec2f32, r: M_Rect) -> bool {
+	return (r.x <= p.x && p.x < r.x + r.width) && (r.y <= p.y && p.y < r.y + r.height)
+}
+
 M_minmax :: proc(a, b: f32) -> (min_val, max_val: f32) {
 	min_val = min(a, b)
 	max_val = max(a, b)
