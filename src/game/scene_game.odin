@@ -36,6 +36,8 @@ _ctx: struct {
 	player_shoot_sound: AUD_Sound,
 	enemy_die_sound: AUD_Sound,
 
+	enemy_hit_particle_emitter: PART_Emitter,
+
 	disable_bloom: bool,
 }
 
@@ -335,9 +337,22 @@ scn_game_init :: proc() {
 
 	RES_load_sound(&_ctx.player_shoot_sound, RES_ID_SOUND_PLAYER_SHOOT_WAV)
 	RES_load_sound(&_ctx.enemy_die_sound, RES_ID_SOUND_ENEMY_DIE_WAV)
+
+	_ctx.enemy_hit_particle_emitter = {
+		particles_per_emission = 16,
+		min_lifetime = 0.3,
+		max_lifetime = 0.7,
+		min_size = 0.3,
+		max_size = 0.6,
+		min_vel = 4.0,
+		max_vel = 7.0,
+		color = {255, 0, 0, 255},
+	}
 }
 
 scn_game_uninit :: proc() {
+	PART_destroy_emitter(&_ctx.enemy_hit_particle_emitter)
+
 	delete(_ctx.enemies)
 
 	_player_uninit()
@@ -399,8 +414,14 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 		}
 
 		if closest_enemy_index != -1 {
-			_ctx.enemies[closest_enemy_index].hp -= 1
-			if _ctx.enemies[closest_enemy_index].hp <= 0 {
+			enemy := &_ctx.enemies[closest_enemy_index]
+			PART_emit_particle(
+				&_ctx.enemy_hit_particle_emitter,
+				enemy.position + {0.0, _ENEMY_DATABASE[enemy.kind].hitbox_offset, 0.0},
+				ray_direction,
+			)
+			enemy.hp -= 1
+			if enemy.hp <= 0 {
 				AUD_play_sound(&_ctx.enemy_die_sound)
 				unordered_remove(&_ctx.enemies, closest_enemy_index)
 			}
@@ -417,6 +438,8 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 
 		append(&_ctx.enemies, enemy)
 	}
+
+	PART_tick_emitter(&_ctx.enemy_hit_particle_emitter, delta)
 }
 
 scn_game_draw :: proc(alpha: f32) {
@@ -436,6 +459,8 @@ scn_game_draw :: proc(alpha: f32) {
 	for &enemy in _ctx.enemies {
 		_enemy_draw(enemy)
 	}
+
+	PART_draw_emitter(&_ctx.enemy_hit_particle_emitter, &_ctx.ren3d)
 
 	GFX_add_3d_light(&_ctx.ren3d, {
 		position = _ctx.cam.position,

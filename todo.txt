@@ -5,8 +5,7 @@
 	- chance to drop items when enemy die
 		- ammo
 		- health
-	- enemy hit particle
-	- enemy die particle
+	X enemy hit particle
 	- difficulty curve
 	- main menu
 	- option menu
