@@ -92,3 +92,7 @@ INP_get_mouse_pos :: proc(state: INP_State) -> M_Vec2f32 {
 INP_get_mouse_delta :: proc(state: INP_State) -> M_Vec2f32 {
 	return state.mouse_delta
 }
+
+INP_get_mouse_wheel :: proc(state: INP_State) -> M_Vec2f32 {
+	return state.mouse_wheel
+}

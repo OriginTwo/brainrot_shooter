@@ -49,10 +49,6 @@ _buttons := [?]_Button{
 		click_proc = _play_button_proc,
 	},
 	{
-		text = "Options",
-		click_proc = _options_button_proc,
-	},
-	{
 		text = "Quit",
 		click_proc = _quit_button_proc,
 	},
@@ -61,10 +57,6 @@ _buttons := [?]_Button{
 @(private="file")
 _play_button_proc :: proc() {
 	SCN_change(SCN_GAME_HANDLE)
-}
-
-@(private="file")
-_options_button_proc :: proc() {
 }
 
 @(private="file")

@@ -9,7 +9,6 @@
 	X enemy hit particle
 	X difficulty curve
 	X main menu
-	- option menu
 	- score
 	- game over screen
 	- minimap
