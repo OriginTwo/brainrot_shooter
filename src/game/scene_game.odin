@@ -33,7 +33,9 @@ _ctx: struct {
 
 	enemies: [dynamic]_Enemy,
 
+	player_hit_sound: AUD_Sound,
 	player_shoot_sound: AUD_Sound,
+	player_shoot_no_ammo_sound: AUD_Sound,
 	enemy_die_sound: AUD_Sound,
 
 	enemy_hit_particle_emitter: PART_Emitter,
@@ -57,25 +59,36 @@ _Player :: struct {
 	knockback_vel: M_Vec2f32,
 	bob_t: f32,
 
+	ammo: int,
+
 	tick_since_last_shot: u32,
 }
 
 @(private="file")
 _player_init :: proc() {
-	RES_load_texture(&_ctx.player.hand_texture, RES_ID_IMAGE_PLAYER_HAND_PNG)
-	RES_load_texture(&_ctx.player.hand_shoot_texture, RES_ID_IMAGE_PLAYER_HAND_SHOOT_PNG)
+	p := &_ctx.player
 
-	_ctx.player.tick_since_last_shot = _PLAYER_SHOOT_ANIM_TICK_DURATION
+	RES_load_texture(&p.hand_texture, RES_ID_IMAGE_PLAYER_HAND_PNG)
+	RES_load_texture(&p.hand_shoot_texture, RES_ID_IMAGE_PLAYER_HAND_SHOOT_PNG)
+
+	p.ammo = 30
+
+	p.tick_since_last_shot = _PLAYER_SHOOT_ANIM_TICK_DURATION
 }
 
 @(private="file")
 _player_uninit :: proc() {
-	GFX_unload_texture(&_ctx.player.hand_texture)
-	GFX_unload_texture(&_ctx.player.hand_shoot_texture)
+	p := &_ctx.player
+
+	GFX_unload_texture(&p.hand_texture)
+	GFX_unload_texture(&p.hand_shoot_texture)
+	p^ = {}
 }
 
 @(private="file")
 _player_tick :: proc(input: INP_State, delta: f32) {
+	p := &_ctx.player
+
 	mouse_delta := INP_get_mouse_delta(input)
 
 	_ctx.cam.pitch += mouse_delta.y*DEFAULT_MOUSE_SENSITIVITY
@@ -91,28 +104,30 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 	if INP_is_key_down(input, .D) {move_vec += right.xz}
 	if INP_is_key_down(input, .A) {move_vec -= right.xz}
 	move_vec = linalg.normalize0(move_vec)
-	_ctx.player.desired_position.xz += move_vec*_PLAYER_SPEED*delta
+	p.desired_position.xz += move_vec*_PLAYER_SPEED*delta
 
-	_ctx.player.desired_position.xz += _ctx.player.knockback_vel*delta
+	p.desired_position.xz += p.knockback_vel*delta
 	{
 		rate := 1 - math.pow(2.0, -15.0*delta)
-		_ctx.player.knockback_vel += (M_Vec2f32{0.0, 0.0} - _ctx.player.knockback_vel)*rate
+		p.knockback_vel += (M_Vec2f32{0.0, 0.0} - p.knockback_vel)*rate
 	}
 
-	_ctx.player.position += (_ctx.player.desired_position - _ctx.player.position)*20.0*delta
-	_ctx.cam.position = _ctx.player.position + {0.0, _PLAYER_HEIGHT, 0.0}
+	p.position += (p.desired_position - p.position)*20.0*delta
+	_ctx.cam.position = p.position + {0.0, _PLAYER_HEIGHT, 0.0}
 
 	if move_vec != {} {
-		_ctx.player.bob_t += delta*4.0
+		p.bob_t += delta*4.0
 	} else {
-		_ctx.player.bob_t -= delta*4.0
+		p.bob_t -= delta*4.0
 	}
-	_ctx.player.bob_t = clamp(_ctx.player.bob_t, 0.0, 1.0)
-	_ctx.cam.offset.y = 0.1*_ctx.player.bob_t*math.sin(f32(TIME_now())*14.0)
+	p.bob_t = clamp(p.bob_t, 0.0, 1.0)
+	_ctx.cam.offset.y = 0.1*p.bob_t*math.sin(f32(TIME_now())*14.0)
 }
 
 @(private="file")
 _player_draw_hud :: proc() {
+	p := &_ctx.player
+
 	window_width: f32
 	window_height: f32
 	{
@@ -125,6 +140,7 @@ _player_draw_hud :: proc() {
 
 	scale_x := window_width/WINDOW_WIDTH
 	scale_y := window_height/WINDOW_HEIGHT
+	scale := min(scale_x, scale_y)
 
 	// hand
 	{
@@ -134,14 +150,14 @@ _player_draw_hud :: proc() {
 		rect.x = window_width*3.0/4.0 - rect.width/3.0
 		rect.y = window_height - rect.height*2.0/3.0
 		// move bob
-		rect.x += 36.0*_ctx.player.bob_t*math.cos(f32(TIME_now())*6.0)
-		rect.y += abs(24.0*_ctx.player.bob_t*math.sin(f32(TIME_now())*6.0))
+		rect.x += 36.0*p.bob_t*math.cos(f32(TIME_now())*6.0)
+		rect.y += abs(24.0*p.bob_t*math.sin(f32(TIME_now())*6.0))
 		// idle bob
 		rect.y += 6.0*math.sin(f32(TIME_now()))
 
 		texture := (
-			_ctx.player.hand_texture if _ctx.player.tick_since_last_shot > _PLAYER_SHOOT_ANIM_TICK_DURATION
-			else _ctx.player.hand_shoot_texture
+			p.hand_texture if p.tick_since_last_shot > _PLAYER_SHOOT_ANIM_TICK_DURATION
+			else p.hand_shoot_texture
 		)
 
 		GFX_draw_2d_texture(&_ctx.ren2d, texture, {0.0, 0.0, 174.0, 203.0}, rect, M_COLOR_WHITE)
@@ -197,6 +213,35 @@ _player_draw_hud :: proc() {
 				DEFAULT_CROSSHAIR_THICKNESS,
 			},
 			DEFAULT_CROSSHAIR_COLOR,
+		)
+	}
+
+	// text
+	{
+		TEXT_SCALE :: 3.0
+
+		font_height := f32(_ctx.font.base_size)*TEXT_SCALE*scale
+		line_height := font_height*0.75
+		y := window_height - font_height
+
+		GFX_draw_2d_string(
+			&_ctx.ren2d,
+			_ctx.font,
+			fmt.tprintf("AMMO: %d", p.ammo),
+			{8.0*scale, y},
+			M_COLOR_WHITE,
+			TEXT_SCALE*scale,
+		)
+
+		y -= line_height
+
+		GFX_draw_2d_string(
+			&_ctx.ren2d,
+			_ctx.font,
+			fmt.tprintf("HP: %d", 23),
+			{8.0*scale, y},
+			M_COLOR_WHITE,
+			TEXT_SCALE*scale,
 		)
 	}
 }
@@ -335,7 +380,9 @@ scn_game_init :: proc() {
 	RES_load_texture(&_ENEMY_DATABASE[.Chimpanzini_Bananini].texture, RES_ID_IMAGE_CHIMPANZINI_BANANINI_PNG)
 	RES_load_texture(&_ENEMY_DATABASE[.Assassino_Cappuccino].texture, RES_ID_IMAGE_ASSASSINO_CAPPUCCINO_PNG)
 
+	RES_load_sound(&_ctx.player_hit_sound, RES_ID_SOUND_PLAYER_HIT_WAV)
 	RES_load_sound(&_ctx.player_shoot_sound, RES_ID_SOUND_PLAYER_SHOOT_WAV)
+	RES_load_sound(&_ctx.player_shoot_no_ammo_sound, RES_ID_SOUND_PLAYER_SHOOT_NO_AMMO_WAV)
 	RES_load_sound(&_ctx.enemy_die_sound, RES_ID_SOUND_ENEMY_DIE_WAV)
 
 	_ctx.enemy_hit_particle_emitter = {
@@ -357,7 +404,9 @@ scn_game_uninit :: proc() {
 
 	_player_uninit()
 
+	AUD_unload_sound(&_ctx.player_hit_sound)
 	AUD_unload_sound(&_ctx.player_shoot_sound)
+	AUD_unload_sound(&_ctx.player_shoot_no_ammo_sound)
 	AUD_unload_sound(&_ctx.enemy_die_sound)
 
 	for &data in _ENEMY_DATABASE {
@@ -390,41 +439,46 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 
 	_ctx.player.tick_since_last_shot += 1
 	if INP_is_mouse_pressed(input, .Left) {
-		_ctx.player.tick_since_last_shot = 0
+		if _ctx.player.ammo > 0 {
+			_ctx.player.ammo -= 1
+			_ctx.player.tick_since_last_shot = 0
 
-		AUD_play_sound(&_ctx.player_shoot_sound)
+			AUD_play_sound(&_ctx.player_shoot_sound)
 
-		ray_origin := _ctx.cam.position
-		ray_direction, _, _ := GFX_get_camera_forward_up_right(_ctx.cam)
+			ray_origin := _ctx.cam.position
+			ray_direction, _, _ := GFX_get_camera_forward_up_right(_ctx.cam)
 
-		closest_enemy_distance: f32 = 99999.0
-		closest_enemy_index := -1
+			closest_enemy_distance: f32 = 99999.0
+			closest_enemy_index := -1
 
-		for enemy, i in _ctx.enemies {
-			data := _ENEMY_DATABASE[enemy.kind]
-			ray_sphere_vector := (enemy.position + {0.0, data.hitbox_offset, 0.0}) - ray_origin
-			dot := linalg.dot(ray_sphere_vector, ray_direction)
-			distance := linalg.length(ray_sphere_vector)
-			d := (data.hitbox_radius*data.hitbox_radius - (distance*distance - dot*dot))
-			hit := d >= 0.0
-			if hit && distance <= _PLAYER_SHOT_DISTANCE && distance < closest_enemy_distance {
-				closest_enemy_distance = distance
-				closest_enemy_index = i
+			for enemy, i in _ctx.enemies {
+				data := _ENEMY_DATABASE[enemy.kind]
+				ray_sphere_vector := (enemy.position + {0.0, data.hitbox_offset, 0.0}) - ray_origin
+				dot := linalg.dot(ray_sphere_vector, ray_direction)
+				distance := linalg.length(ray_sphere_vector)
+				d := (data.hitbox_radius*data.hitbox_radius - (distance*distance - dot*dot))
+				hit := d >= 0.0
+				if hit && distance <= _PLAYER_SHOT_DISTANCE && distance < closest_enemy_distance {
+					closest_enemy_distance = distance
+					closest_enemy_index = i
+				}
 			}
-		}
 
-		if closest_enemy_index != -1 {
-			enemy := &_ctx.enemies[closest_enemy_index]
-			PART_emit_particle(
-				&_ctx.enemy_hit_particle_emitter,
-				enemy.position + {0.0, _ENEMY_DATABASE[enemy.kind].hitbox_offset, 0.0},
-				ray_direction,
-			)
-			enemy.hp -= 1
-			if enemy.hp <= 0 {
-				AUD_play_sound(&_ctx.enemy_die_sound)
-				unordered_remove(&_ctx.enemies, closest_enemy_index)
+			if closest_enemy_index != -1 {
+				enemy := &_ctx.enemies[closest_enemy_index]
+				PART_emit_particle(
+					&_ctx.enemy_hit_particle_emitter,
+					enemy.position + {0.0, _ENEMY_DATABASE[enemy.kind].hitbox_offset, 0.0},
+					ray_direction,
+				)
+				enemy.hp -= 1
+				if enemy.hp <= 0 {
+					AUD_play_sound(&_ctx.enemy_die_sound)
+					unordered_remove(&_ctx.enemies, closest_enemy_index)
+				}
 			}
+		} else {
+			AUD_play_sound(&_ctx.player_shoot_no_ammo_sound)
 		}
 	}
 

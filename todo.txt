@@ -11,6 +11,7 @@
 	- option menu
 	- score
 	- game over screen
+	- minimap??
 
 # system/engine
 	X window              [WND]
