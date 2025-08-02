@@ -65,6 +65,7 @@ _ctx: struct {
 @(private="file") _PLAYER_SHOT_DISTANCE :: 30.0
 @(private="file") _PLAYER_SHOOT_ANIM_TICK_DURATION :: 3
 @(private="file") _PLAYER_FOOTSTEP_SOUND_INTERVAL :: 0.4
+@(private="file") _PLAYER_MINIMAP_PIXELS_PER_UNIT :: 2.5
 
 @(private="file")
 _Player :: struct {
@@ -253,6 +254,76 @@ _player_draw_hud :: proc() {
 			},
 			DEFAULT_CROSSHAIR_COLOR,
 		)
+	}
+
+	// minimap
+	{
+		rect := M_Rect{16.0, 16.0, 160.0*scale, 160.0*scale}
+		rect_center := M_Vec2f32{rect.x + rect.width/2.0, rect.y + rect.height/2.0}
+
+		GFX_draw_2d_rect(
+			&_ctx.ren2d,
+			rect,
+			{0, 0, 0, 127},
+		)
+
+		GFX_draw_2d_rect_line(
+			&_ctx.ren2d,
+			rect,
+			M_COLOR_WHITE,
+			4.0*scale,
+		)
+
+		GFX_draw_2d_triangle(
+			&_ctx.ren2d,
+			{rect_center.x, rect_center.y - 8.0*scale},             M_COLOR_WHITE,
+			{rect_center.x - 5.0*scale, rect_center.y + 8.0*scale}, M_COLOR_WHITE,
+			{rect_center.x + 5.0*scale, rect_center.y + 8.0*scale}, M_COLOR_WHITE,
+		)
+
+		dot_size := 6.0*scale
+
+		for enemy in _ctx.enemies {
+			rel_pos := (p.position.xz - enemy.position.xz)*_PLAYER_MINIMAP_PIXELS_PER_UNIT
+			dist_sqr := linalg.length2(rel_pos)
+			if dist_sqr >= (rect.width/2.0)*(rect.width/2.0) {
+				continue
+			}
+
+			rel_pos = (
+				linalg.matrix3_rotate_f32(
+					-_ctx.cam.yaw*math.RAD_PER_DEG,
+					{0.0, 0.0, 1.0},
+				)*M_Vec3f32{rel_pos.x, rel_pos.y, 1.0}
+			).xy
+
+			GFX_draw_2d_rect(
+				&_ctx.ren2d,
+				{rect_center.x - rel_pos.x - dot_size/2.0, rect_center.y - rel_pos.y - dot_size/2.0, dot_size, dot_size},
+				M_COLOR_RED,
+			)
+		}
+
+		for pickup in _ctx.pickups {
+			rel_pos := (p.position.xz - pickup.position.xz)*_PLAYER_MINIMAP_PIXELS_PER_UNIT
+			dist_sqr := linalg.length2(rel_pos)
+			if dist_sqr >= (rect.width/2.0)*(rect.width/2.0) {
+				continue
+			}
+
+			rel_pos = (
+				linalg.matrix3_rotate_f32(
+					-_ctx.cam.yaw*math.RAD_PER_DEG,
+					{0.0, 0.0, 1.0},
+				)*M_Vec3f32{rel_pos.x, rel_pos.y, 1.0}
+			).xy
+
+			GFX_draw_2d_rect(
+				&_ctx.ren2d,
+				{rect_center.x - rel_pos.x - dot_size/2.0, rect_center.y - rel_pos.y - dot_size/2.0, dot_size, dot_size},
+				M_COLOR_CYAN,
+			)
+		}
 	}
 
 	// text

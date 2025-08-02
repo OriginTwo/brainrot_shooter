@@ -11,7 +11,7 @@
 	X main menu
 	X score
 	X game over screen
-	- minimap
+	X minimap
 	X hit indicator
 	X out of ammo indicator
 	- pause game
@@ -48,7 +48,6 @@
 			X bloom
 	X audio               [AUD]
 		X 3d
-	- particle            [PART]
+	X particle            [PART]
 	X scene               [SCN]
 	X resource            [RES]
-	- ui                  [UI]
