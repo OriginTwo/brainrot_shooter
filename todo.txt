@@ -16,6 +16,7 @@
 	X out of ammo indicator
 	X pause game
 	X music
+	X rc file
 
 # system/engine
 	X window              [WND]

@@ -40,8 +40,8 @@ def build_game():
 			flags.append("-o:aggressive")
 			flags.append("-subsystem:windows")
 			flags.append("-define:DEV_BUILD=false")
+			flags.append("-resource:resource.rc")
 			pack_resource = True
-			# TODO: rc file
 
 
 	print("-- Compiling shaders")
