@@ -79,7 +79,9 @@ _Player :: struct {
 	knockback_vel: M_Vec2f32,
 	bob_t: f32,
 
+	tick_since_last_hit: u32,
 	tick_since_last_shot: u32,
+	tick_since_last_no_ammo_shot: u32,
 
 	was_moving: bool,
 	footstep_sound_timer: TIME_Timer,
@@ -110,6 +112,10 @@ _player_uninit :: proc() {
 @(private="file")
 _player_tick :: proc(input: INP_State, delta: f32) {
 	p := &_ctx.player
+
+	p.tick_since_last_hit += 1
+	p.tick_since_last_shot += 1
+	p.tick_since_last_no_ammo_shot += 1
 
 	mouse_delta := INP_get_mouse_delta(input)
 
@@ -262,7 +268,7 @@ _player_draw_hud :: proc() {
 			_ctx.font,
 			fmt.tprintf("AMMO: %d", p.ammo),
 			{8.0*scale, y},
-			M_COLOR_WHITE,
+			M_COLOR_RED if _ctx.player.tick_since_last_no_ammo_shot < 6 else M_COLOR_WHITE,
 			TEXT_SCALE*scale,
 		)
 
@@ -273,7 +279,7 @@ _player_draw_hud :: proc() {
 			_ctx.font,
 			fmt.tprintf("HP: %d", p.hp),
 			{8.0*scale, y},
-			M_COLOR_WHITE,
+			M_COLOR_RED if _ctx.player.tick_since_last_hit < 6 else M_COLOR_WHITE,
 			TEXT_SCALE*scale,
 		)
 	}
@@ -390,6 +396,7 @@ _enemy_tick :: proc(e: ^_Enemy, delta: f32) {
 		AUD_play_sound(&_ctx.player_hit_sound)
 		_ctx.player.hp -= data.attack_damage
 		_ctx.player.knockback_vel = dir.xz*data.attack_knockback
+		_ctx.player.tick_since_last_hit = 0
 		TIME_set_timer(&e.attack_timer, data.attack_cooldown)
 	}
 }
@@ -598,7 +605,6 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 		}
 	}
 
-	_ctx.player.tick_since_last_shot += 1
 	if INP_is_mouse_pressed(input, .Left) {
 		if _ctx.player.ammo > 0 {
 			_ctx.player.ammo -= 1
@@ -669,6 +675,7 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 			}
 		} else {
 			AUD_play_sound(&_ctx.player_shoot_no_ammo_sound)
+			_ctx.player.tick_since_last_no_ammo_shot = 0
 		}
 	}
 

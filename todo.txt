@@ -10,12 +10,11 @@
 	X difficulty curve
 	X main menu
 	X score
-	- game over screen
-		- animation
-		- sound
+	X game over screen
 	- minimap
-	- hit indicator
-	- pause
+	X hit indicator
+	X out of ammo indicator
+	- pause game
 	X music
 
 # system/engine
