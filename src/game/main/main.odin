@@ -53,6 +53,7 @@ main :: proc() {
 	defer game.SCN_uninit()
 	game.SCN_register(game.SCN_MAIN_MENU_HANDLE, game.SCN_MAIN_MENU_CALLBACKS)
 	game.SCN_register(game.SCN_GAME_HANDLE, game.SCN_GAME_CALLBACKS)
+	game.SCN_register(game.SCN_GAME_OVER_HANDLE, game.SCN_GAME_OVER_CALLBACKS)
 	game.SCN_set_initial(game.SCN_MAIN_MENU_HANDLE)
 
 	frame_input_state: game.INP_State

@@ -36,6 +36,8 @@ _ctx: struct {
 	max_enemies: int,
 	max_enemies_timer: TIME_Timer,
 
+	kill: [_Enemy_Kind]int,
+
 	enemies: [dynamic]_Enemy,
 	pickups: [dynamic]_Pickup,
 
@@ -341,6 +343,19 @@ _ENEMY_DATABASE := [_Enemy_Kind]struct{
 }
 
 @(private="file")
+_get_enemy_kind_string :: proc(kind: _Enemy_Kind) -> string {
+	result: string
+	switch kind {
+	case .Tung_Tung_Sahur:      result = "Tung Tung Tung Sahur"
+	case .Trallalero_Trallalla: result = "Trallalero Trallalla"
+	case .Brr_Brr_Patapim:      result = "Brr Brr Patapim"
+	case .Chimpanzini_Bananini: result = "Chimpanzini Bananini"
+	case .Assassino_Cappuccino: result = "Assassino Cappuccino"
+	}
+	return result
+}
+
+@(private="file")
 _enemy_tick :: proc(e: ^_Enemy, delta: f32) {
 	if !TIME_is_timer_timeout(e.attack_timer) {
 		return
@@ -620,6 +635,8 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 						_spawn_pickup(.Hp, enemy_center)
 					}
 
+					_ctx.kill[enemy.kind] += 1
+
 					unordered_remove(&_ctx.enemies, closest_enemy_index)
 				}
 			}
@@ -645,6 +662,16 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	}
 
 	PART_tick_emitter(&_ctx.enemy_hit_particle_emitter, delta)
+
+	if _ctx.player.hp <= 0 {
+		total_kill: int
+		for kind in _Enemy_Kind {
+			scn_game_over_add_kill_count(_get_enemy_kind_string(kind), _ctx.kill[kind])
+			total_kill += _ctx.kill[kind]
+		}
+		scn_game_over_add_kill_count("TOTAL", total_kill)
+		SCN_change(SCN_GAME_OVER_HANDLE)
+	}
 }
 
 scn_game_draw :: proc(alpha: f32) {

@@ -822,6 +822,48 @@ GFX_draw_2d_string :: proc(
 	}
 }
 
+GFX_draw_2d_string_centered :: proc(
+	ren: ^GFX_2D_Renderer,
+	font: GFX_Font,
+	str: string,
+	pos: M_Vec2f32,
+	color: M_Color,
+	scale: f32,
+) {
+	x := pos.x - GFX_get_2d_string_width(font, str, scale)/2.0
+	y := pos.y
+
+	for i in 0..<len(str) {
+		ch := str[i]
+		src := font.sources[ch - 32]
+		info := font.glyphs[ch - 32]
+
+		dst := M_Rect{
+			x + info.offset_x*scale,
+			y + info.offset_y*scale,
+			src.width*scale,
+			src.height*scale,
+		}
+
+		GFX_draw_2d_texture(ren, font.texture, src, dst, color)
+		x += info.advance_x*scale
+	}
+}
+
+GFX_get_2d_string_width :: proc(
+	font: GFX_Font,
+	str: string,
+	scale: f32,
+) -> f32 {
+	width: f32
+	for i in 0..<len(str) {
+		ch := str[i]
+		info := font.glyphs[ch - 32]
+		width += info.advance_x*scale
+	}
+	return width
+}
+
 
 
 @(private="file")

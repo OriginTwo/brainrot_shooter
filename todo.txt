@@ -9,10 +9,11 @@
 	X enemy hit particle
 	X difficulty curve
 	X main menu
-	- score
-	- game over screen
+	X score
+	X game over screen
 	- minimap
 	- hit indicator
+	- pause
 
 # system/engine
 	X window              [WND]
