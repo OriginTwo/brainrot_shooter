@@ -49,6 +49,15 @@ main :: proc() {
 	game.RES_init()
 	defer game.RES_uninit()
 
+	{
+		img: game.GFX_Image
+		game.RES_load_image(&img, game.RES_ID_ICON_PNG)
+		icon := sdl.CreateSurfaceFrom(i32(img.width), i32(img.height), .ABGR8888, raw_data(img.pixels), i32(img.height)*4)
+		sdl.SetWindowIcon(game.WND_get_handle(), icon)
+		sdl.DestroySurface(icon)
+		game.GFX_unload_image(&img)
+	}
+
 	game.SCN_init()
 	defer game.SCN_uninit()
 	game.SCN_register(game.SCN_MAIN_MENU_HANDLE, game.SCN_MAIN_MENU_CALLBACKS)
