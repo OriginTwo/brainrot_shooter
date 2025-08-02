@@ -22,7 +22,8 @@ SCN_GAME_CALLBACKS :: SCN_Callbacks{
 
 @(private="file") _UI_TEXT_SCALE :: 3.0
 @(private="file") _UI_PADDING :: 8.0
-@(private="file") _DIFFICULTY_INCREASE_INTERVAL :: 30.0
+@(private="file") _DIFFICULTY_INCREASE_INTERVAL :: 20.0
+@(private="file") _INITIAL_ENEMY_SPAWN_TIME :: 4.0
 
 @(private="file")
 _ctx: struct {
@@ -36,8 +37,9 @@ _ctx: struct {
 	cam: GFX_Camera,
 	player: _Player,
 
-	max_enemies: int,
-	max_enemies_timer: TIME_Timer,
+	enemy_spawn_time: f64,
+	enemy_spawn_timer: TIME_Timer,
+	difficulty_increase_timer: TIME_Timer,
 
 	kill: [_Enemy_Kind]int,
 
@@ -612,8 +614,9 @@ scn_game_init :: proc() {
 
 	_player_init()
 
-	_ctx.max_enemies = 4
-	TIME_set_timer(&_ctx.max_enemies_timer, _DIFFICULTY_INCREASE_INTERVAL)
+	_ctx.enemy_spawn_time = _INITIAL_ENEMY_SPAWN_TIME
+	TIME_set_timer(&_ctx.enemy_spawn_timer, 1.0)
+	TIME_set_timer(&_ctx.difficulty_increase_timer, _DIFFICULTY_INCREASE_INTERVAL)
 
 	RES_load_texture(&_ctx.hp_pickup_tex, RES_ID_IMAGE_HP_PICKUP_PNG)
 	RES_load_texture(&_ctx.ammo_pickup_tex, RES_ID_IMAGE_AMMO_PICKUP_PNG)
@@ -816,7 +819,7 @@ scn_game_draw :: proc(alpha: f32) {
 		scale := min(scale_x, scale_y)
 
 		GFX_set_2d_layer(&_ctx.ren2d, 100)
-		GFX_draw_2d_rect(&_ctx.ren2d, {0.0, 0.0, window_width, window_height}, {0, 0, 0, 127})
+		GFX_draw_2d_rect(&_ctx.ren2d, {0.0, 0.0, window_width, window_height}, {0, 0, 0, 160})
 
 		font_height := f32(_ctx.font.base_size)*_UI_TEXT_SCALE*scale
 		line_height := font_height*1.2
@@ -963,12 +966,14 @@ _game_tick :: proc(input: INP_State, delta: f32) {
 		}
 	}
 
-	if TIME_is_timer_timeout(_ctx.max_enemies_timer) {
-		TIME_set_timer(&_ctx.max_enemies_timer, _DIFFICULTY_INCREASE_INTERVAL)
-		_ctx.max_enemies += 2
+	if TIME_is_timer_timeout(_ctx.difficulty_increase_timer) {
+		TIME_set_timer(&_ctx.difficulty_increase_timer, _DIFFICULTY_INCREASE_INTERVAL)
+		_ctx.enemy_spawn_time = max(_ctx.enemy_spawn_time*0.1, 1.2)
 	}
 
-	if len(_ctx.enemies) < _ctx.max_enemies {
+	if TIME_is_timer_timeout(_ctx.enemy_spawn_timer) {
+		TIME_set_timer(&_ctx.enemy_spawn_timer, _ctx.enemy_spawn_time)
+
 		enemy: _Enemy
 		enemy.kind = rand.choice_enum(_Enemy_Kind)
 		enemy.hp = _ENEMY_DATABASE[enemy.kind].max_hp
