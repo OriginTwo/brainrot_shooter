@@ -604,7 +604,7 @@ scn_game_init :: proc() {
 
 	{
 		img: GFX_Image
-		GFX_load_image_from_file(&img, "res/font/font_big.png")
+		RES_load_image(&img, RES_ID_FONT_FONT_PNG)
 		GFX_load_font_from_image(&_ctx.font, img)
 		GFX_unload_image(&img)
 	}
@@ -691,6 +691,10 @@ scn_game_uninit :: proc() {
 	_ctx = {}
 
 	WND_lock_mouse(false)
+
+	for &button in _buttons {
+		button.hot_t = 0.0
+	}
 }
 
 scn_game_tick :: proc(input: INP_State, delta: f32) {

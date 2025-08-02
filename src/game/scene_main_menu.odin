@@ -74,7 +74,7 @@ scn_main_menu_init :: proc() {
 
 	{
 		img: GFX_Image
-		GFX_load_image_from_file(&img, "res/font/font_big.png")
+		RES_load_image(&img, RES_ID_FONT_FONT_PNG)
 		GFX_load_font_from_image(&_ctx.font, img)
 		GFX_unload_image(&img)
 	}
@@ -105,6 +105,10 @@ scn_main_menu_uninit :: proc() {
 	GFX_destroy_3d_renderer(&_ctx.ren3d)
 	GFX_destroy_post_fx_renderer(&_ctx.ren_fx)
 	_ctx = {}
+
+	for &button in _buttons {
+		button.hot_t = 0.0
+	}
 }
 
 scn_main_menu_tick :: proc(input: INP_State, delta: f32) {

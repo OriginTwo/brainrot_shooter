@@ -81,7 +81,7 @@ scn_game_over_init :: proc() {
 
 	{
 		img: GFX_Image
-		GFX_load_image_from_file(&img, "res/font/font_big.png")
+		RES_load_image(&img, RES_ID_FONT_FONT_PNG)
 		GFX_load_font_from_image(&_ctx.font, img)
 		GFX_unload_image(&img)
 	}
@@ -105,6 +105,10 @@ scn_game_over_uninit :: proc() {
 	GFX_unload_font(&_ctx.font)
 	GFX_destroy_2d_renderer(&_ctx.ren2d)
 	_ctx = {}
+
+	for &button in _buttons {
+		button.hot_t = 0.0
+	}
 }
 
 scn_game_over_tick :: proc(input: INP_State, delta: f32) {
@@ -133,6 +137,7 @@ scn_game_over_tick :: proc(input: INP_State, delta: f32) {
 		mouse := INP_get_mouse_pos(input)
 		rate := 1.0 - math.pow(2.0, -25.0*delta)
 		rect := M_Rect{window_width/2.0, y, window_width/4.0, line_height}
+		rect.x -= rect.width/2.0
 		target: f32 = 0.0
 		is_hovered := M_is_point_in_rect(mouse, rect)
 

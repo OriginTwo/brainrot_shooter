@@ -159,7 +159,7 @@ RES__pak_provider_load :: proc(provider: ^RES__Pak_Provider, id: RES_ID) -> []by
 		return nil
 	}
 	os.seek(provider.pak_file, entry.packed_offset, os.SEEK_SET)
-	data := make([]byte, entry.packed_offset)
+	data := make([]byte, entry.packed_size)
 	os.read(provider.pak_file, data)
 	return data
 }
