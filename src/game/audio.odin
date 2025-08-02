@@ -2,6 +2,7 @@ package game
 
 import "core:os"
 import "core:log"
+import "core:slice"
 import "core:strings"
 
 import ma "vendor:miniaudio"
@@ -63,6 +64,11 @@ AUD_init :: proc() {
 }
 
 AUD_uninit :: proc() {
+	for _, &source in AUD__ctx.sound_sources {
+		delete(source.data)
+	}
+	delete(AUD__ctx.sound_sources)
+
 	ma.resource_manager_uninit(&AUD__ctx.resman)
 	ma.device_uninit(&AUD__ctx.device)
 	ma.engine_uninit(&AUD__ctx.engine)
@@ -74,9 +80,19 @@ AUD_update :: proc() {
 			continue
 		}
 
-		if !ma.sound_is_playing(&AUD__ctx.sounds[i].sound) {
-			ma.sound_uninit(&AUD__ctx.sounds[i].sound)
-			ma.decoder_uninit(&AUD__ctx.sounds[i].decoder)
+		if !ma.sound_is_playing(&AUD__ctx.sounds[i].instance.sound) {
+			ma.decoder_uninit(&AUD__ctx.sounds[i].instance.decoder)
+			ma.sound_uninit(&AUD__ctx.sounds[i].instance.sound)
+
+			source := &AUD__ctx.sound_sources[AUD__ctx.sounds[i].source]
+			source.num_refs -= 1
+
+			if source.num_refs <= 0 {
+				delete(source.data)
+				delete_key(&AUD__ctx.sound_sources, AUD__ctx.sounds[i].source)
+			}
+
+			AUD__ctx.sounds[i] = {}
 			is_taken = false
 		}
 	}
@@ -129,8 +145,20 @@ AUD_play_sound :: proc(sound: ^AUD_Sound) {
 	for &is_taken, i in AUD__ctx.sound_slots_taken {
 		if !is_taken {
 			is_taken = true
-			AUD_load_sound_from_memory(&AUD__ctx.sounds[i], sound.data)
-			ma.sound_start(&AUD__ctx.sounds[i].sound)
+			AUD__ctx.sounds[i].source = sound
+
+			if sound not_in AUD__ctx.sound_sources {
+				AUD__ctx.sound_sources[sound] = {
+					num_refs = 0,
+					data = slice.clone(sound.data),
+				}
+			}
+
+			source := &AUD__ctx.sound_sources[sound]
+			source.num_refs += 1
+
+			AUD_load_sound_from_memory(&AUD__ctx.sounds[i].instance, source.data)
+			ma.sound_start(&AUD__ctx.sounds[i].instance.sound)
 			break
 		}
 	}
@@ -188,7 +216,8 @@ AUD__ctx: struct {
 	engine: ma.engine,
 
 	sound_slots_taken: [AUD_MAX_SOUND_PLAYING]bool,
-	sounds: [AUD_MAX_SOUND_PLAYING]AUD_Sound,
+	sounds: [AUD_MAX_SOUND_PLAYING]struct {instance: AUD_Sound, source: ^AUD_Sound},
+	sound_sources: map[^AUD_Sound]struct {num_refs: int, data: []byte},
 }
 
 @(private="file")
