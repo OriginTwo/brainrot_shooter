@@ -10,10 +10,13 @@
 	X difficulty curve
 	X main menu
 	X score
-	X game over screen
+	- game over screen
+		- animation
+		- sound
 	- minimap
 	- hit indicator
 	- pause
+	X music
 
 # system/engine
 	X window              [WND]

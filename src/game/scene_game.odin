@@ -45,11 +45,14 @@ _ctx: struct {
 	ammo_pickup_tex: GFX_Texture,
 
 	game_start_sound: AUD_Sound,
+	player_footstep_sound: AUD_Sound,
 	player_hit_sound: AUD_Sound,
 	player_shoot_sound: AUD_Sound,
 	player_shoot_no_ammo_sound: AUD_Sound,
-	enemy_die_sound: AUD_Sound,
+	enemy_hit_sound: AUD_Sound,
 	pickup_sound: AUD_Sound,
+
+	music: AUD_Music,
 
 	enemy_hit_particle_emitter: PART_Emitter,
 }
@@ -61,6 +64,7 @@ _ctx: struct {
 @(private="file") _PLAYER_SPEED :: 6.0
 @(private="file") _PLAYER_SHOT_DISTANCE :: 30.0
 @(private="file") _PLAYER_SHOOT_ANIM_TICK_DURATION :: 3
+@(private="file") _PLAYER_FOOTSTEP_SOUND_INTERVAL :: 0.4
 
 @(private="file")
 _Player :: struct {
@@ -76,6 +80,9 @@ _Player :: struct {
 	bob_t: f32,
 
 	tick_since_last_shot: u32,
+
+	was_moving: bool,
+	footstep_sound_timer: TIME_Timer,
 }
 
 @(private="file")
@@ -130,13 +137,24 @@ _player_tick :: proc(input: INP_State, delta: f32) {
 	p.position += (p.desired_position - p.position)*20.0*delta
 	_ctx.cam.position = p.position + {0.0, _PLAYER_HEIGHT, 0.0}
 
-	if move_vec != {} {
+	is_moving := move_vec != {}
+
+	if is_moving {
 		p.bob_t += delta*4.0
+		if !p.was_moving {
+			TIME_set_timer(&p.footstep_sound_timer, _PLAYER_FOOTSTEP_SOUND_INTERVAL)
+		}
+		if TIME_is_timer_timeout(p.footstep_sound_timer) {
+			AUD_play_sound(&_ctx.player_footstep_sound)
+			TIME_set_timer(&p.footstep_sound_timer, _PLAYER_FOOTSTEP_SOUND_INTERVAL)
+		}
 	} else {
 		p.bob_t -= delta*4.0
 	}
 	p.bob_t = clamp(p.bob_t, 0.0, 1.0)
 	_ctx.cam.offset.y = 0.1*p.bob_t*math.sin(f32(TIME_now())*14.0)
+
+	p.was_moving = is_moving
 }
 
 @(private="file")
@@ -497,11 +515,14 @@ scn_game_init :: proc() {
 	RES_load_texture(&_ENEMY_DATABASE[.Assassino_Cappuccino].texture, RES_ID_IMAGE_ASSASSINO_CAPPUCCINO_PNG)
 
 	RES_load_sound(&_ctx.game_start_sound, RES_ID_SOUND_GAME_START_WAV)
+	RES_load_sound(&_ctx.player_footstep_sound, RES_ID_SOUND_PLAYER_FOOTSTEP_WAV)
 	RES_load_sound(&_ctx.player_hit_sound, RES_ID_SOUND_PLAYER_HIT_WAV)
 	RES_load_sound(&_ctx.player_shoot_sound, RES_ID_SOUND_PLAYER_SHOOT_WAV)
 	RES_load_sound(&_ctx.player_shoot_no_ammo_sound, RES_ID_SOUND_PLAYER_SHOOT_NO_AMMO_WAV)
-	RES_load_sound(&_ctx.enemy_die_sound, RES_ID_SOUND_ENEMY_DIE_WAV)
+	RES_load_sound(&_ctx.enemy_hit_sound, RES_ID_SOUND_ENEMY_HIT_WAV)
 	RES_load_sound(&_ctx.pickup_sound, RES_ID_SOUND_PICKUP_WAV)
+
+	RES_load_music(&_ctx.music, RES_ID_MUSIC_COSMIC_STAR_OGG)
 
 	_ctx.enemy_hit_particle_emitter = {
 		particles_per_emission = 16,
@@ -515,6 +536,10 @@ scn_game_init :: proc() {
 	}
 
 	AUD_play_sound(&_ctx.game_start_sound)
+
+	ma.sound_set_looping(&_ctx.music.sound, true)
+	ma.sound_set_volume(&_ctx.music.sound, 0.7)
+	ma.sound_start(&_ctx.music.sound)
 }
 
 scn_game_uninit :: proc() {
@@ -526,11 +551,14 @@ scn_game_uninit :: proc() {
 	_player_uninit()
 
 	AUD_unload_sound(&_ctx.game_start_sound)
+	AUD_unload_sound(&_ctx.player_footstep_sound)
 	AUD_unload_sound(&_ctx.player_hit_sound)
 	AUD_unload_sound(&_ctx.player_shoot_sound)
 	AUD_unload_sound(&_ctx.player_shoot_no_ammo_sound)
-	AUD_unload_sound(&_ctx.enemy_die_sound)
+	AUD_unload_sound(&_ctx.enemy_hit_sound)
 	AUD_unload_sound(&_ctx.pickup_sound)
+
+	AUD_unload_music(&_ctx.music)
 
 	for &data in _ENEMY_DATABASE {
 		GFX_unload_texture(&data.texture)
@@ -606,9 +634,8 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 					ray_direction,
 				)
 				enemy.hp -= 1
+				AUD_play_sound(&_ctx.enemy_hit_sound)
 				if enemy.hp <= 0 {
-					AUD_play_sound(&_ctx.enemy_die_sound)
-
 					rand_num := rand.float32()
 
 					_spawn_pickup :: proc(kind: _Pickup_Kind, position: M_Vec3f32) {

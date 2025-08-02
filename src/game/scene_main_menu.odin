@@ -6,6 +6,7 @@ import "core:math/ease"
 import "core:math/rand"
 
 import sdl "vendor:sdl3"
+import ma "vendor:miniaudio"
 
 import sg "lib:sokol/gfx"
 
@@ -32,6 +33,8 @@ _ctx: struct {
 	tung_tung_sahur_tex: GFX_Texture,
 
 	hovered_sound: AUD_Sound,
+
+	music: AUD_Music,
 }
 
 @(private="file")
@@ -82,9 +85,17 @@ scn_main_menu_init :: proc() {
 	RES_load_texture(&_ctx.tung_tung_sahur_tex, RES_ID_IMAGE_TUNG_TUNG_SAHUR_PNG)
 
 	RES_load_sound(&_ctx.hovered_sound, RES_ID_SOUND_UI_HOVERED_WAV)
+
+	RES_load_music(&_ctx.music, RES_ID_MUSIC_DESERT_SIROCCO_OGG)
+
+	ma.sound_set_looping(&_ctx.music.sound, true)
+	ma.sound_set_volume(&_ctx.music.sound, 0.3)
+	ma.sound_start(&_ctx.music.sound)
 }
 
 scn_main_menu_uninit :: proc() {
+	AUD_unload_music(&_ctx.music)
+
 	AUD_unload_sound(&_ctx.hovered_sound)
 
 	GFX_unload_texture(&_ctx.tung_tung_sahur_tex)
