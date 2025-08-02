@@ -952,9 +952,9 @@ _game_tick :: proc(input: INP_State, delta: f32) {
 					}
 
 					switch rand_num {
-					case 0.00..<0.80: _spawn_pickup(.Ammo, enemy_center)
-					case 0.80..<0.95: _spawn_pickup(.Hp, enemy_center)
-					case 0.95..<1.00:
+					case 0.00..<0.87: _spawn_pickup(.Ammo, enemy_center)
+					case 0.87..<0.97: _spawn_pickup(.Hp, enemy_center)
+					case 0.97..<1.00:
 						_spawn_pickup(.Ammo, enemy_center)
 						_spawn_pickup(.Hp, enemy_center)
 					}
@@ -972,7 +972,7 @@ _game_tick :: proc(input: INP_State, delta: f32) {
 
 	if TIME_is_timer_timeout(_ctx.difficulty_increase_timer) {
 		TIME_set_timer(&_ctx.difficulty_increase_timer, _DIFFICULTY_INCREASE_INTERVAL)
-		_ctx.enemy_spawn_time = max(_ctx.enemy_spawn_time*0.1, 1.2)
+		_ctx.enemy_spawn_time = max(_ctx.enemy_spawn_time*0.1, 0.8)
 	}
 
 	if TIME_is_timer_timeout(_ctx.enemy_spawn_timer) {
