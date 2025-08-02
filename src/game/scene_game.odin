@@ -10,7 +10,6 @@ import "core:math/rand"
 import sdl "vendor:sdl3"
 import ma "vendor:miniaudio"
 
-import im "lib:imgui"
 import sg "lib:sokol/gfx"
 
 SCN_GAME_HANDLE :: SCN_Handle(#hash("game", "fnv64a"))
@@ -21,6 +20,8 @@ SCN_GAME_CALLBACKS :: SCN_Callbacks{
 	scn_game_draw,
 }
 
+@(private="file") _UI_TEXT_SCALE :: 3.0
+@(private="file") _UI_PADDING :: 8.0
 @(private="file") _DIFFICULTY_INCREASE_INTERVAL :: 30.0
 
 @(private="file")
@@ -29,6 +30,8 @@ _ctx: struct {
 	ren3d: GFX_3D_Renderer,
 	ren_fx: GFX_Post_FX_Renderer,
 	font: GFX_Font,
+
+	is_paused: bool,
 
 	cam: GFX_Camera,
 	player: _Player,
@@ -52,10 +55,39 @@ _ctx: struct {
 	enemy_hit_sound: AUD_Sound,
 	pickup_sound: AUD_Sound,
 
+	hovered_sound: AUD_Sound,
+
 	music: AUD_Music,
 
 	enemy_hit_particle_emitter: PART_Emitter,
 }
+
+@(private="file")
+_Button :: struct {
+	text: string,
+	hot_t: f32,
+	was_hovered: bool,
+	click_proc: proc(),
+}
+
+@(private="file")
+_buttons := [?]_Button{
+	{
+		text = "Resume",
+		click_proc = _resume_button_proc,
+	},
+	{
+		text = "Surrender",
+		click_proc = _game_over,
+	},
+}
+
+@(private="file")
+_resume_button_proc :: proc() {
+	_ctx.is_paused = false
+	WND_lock_mouse(true)
+}
+
 
 @(private="file") _PLAYER_MAX_HP :: 100
 @(private="file") _PLAYER_MAX_AMMO :: 999
@@ -600,6 +632,8 @@ scn_game_init :: proc() {
 	RES_load_sound(&_ctx.enemy_hit_sound, RES_ID_SOUND_ENEMY_HIT_WAV)
 	RES_load_sound(&_ctx.pickup_sound, RES_ID_SOUND_PICKUP_WAV)
 
+	RES_load_sound(&_ctx.hovered_sound, RES_ID_SOUND_UI_HOVERED_WAV)
+
 	RES_load_music(&_ctx.music, RES_ID_MUSIC_COSMIC_STAR_OGG)
 
 	_ctx.enemy_hit_particle_emitter = {
@@ -636,6 +670,8 @@ scn_game_uninit :: proc() {
 	AUD_unload_sound(&_ctx.enemy_hit_sound)
 	AUD_unload_sound(&_ctx.pickup_sound)
 
+	AUD_unload_sound(&_ctx.hovered_sound)
+
 	AUD_unload_music(&_ctx.music)
 
 	for &data in _ENEMY_DATABASE {
@@ -655,6 +691,183 @@ scn_game_uninit :: proc() {
 }
 
 scn_game_tick :: proc(input: INP_State, delta: f32) {
+	if INP_is_key_pressed(input, .ESCAPE) {
+		AUD_play_sound(&_ctx.hovered_sound)
+		_ctx.is_paused = !_ctx.is_paused
+		WND_lock_mouse(!_ctx.is_paused)
+	}
+
+	if _ctx.is_paused {
+		_game_tick_paused(input, delta)
+
+		window_width: f32
+		window_height: f32
+		{
+			w: i32
+			h: i32
+			sdl.GetWindowSize(WND_get_handle(), &w, &h)
+			window_width = f32(w)
+			window_height = f32(h)
+		}
+
+		scale_x := window_width/WINDOW_WIDTH
+		scale_y := window_height/WINDOW_HEIGHT
+		scale := min(scale_x, scale_y)
+
+		font_height := f32(_ctx.font.base_size)*_UI_TEXT_SCALE*scale
+		line_height := font_height*1.2
+
+		y := window_height/2.0 - (line_height*len(_buttons))/2.0 - (_UI_PADDING*(len(_buttons) - 1))/2.0
+		mouse := INP_get_mouse_pos(input)
+		rate := 1.0 - math.pow(2.0, -25.0*delta)
+
+		for &button in _buttons {
+			rect := M_Rect{44.0*scale, y, window_width/4.0, line_height}
+			target: f32 = 0.0
+			is_hovered := M_is_point_in_rect(mouse, rect)
+
+			if is_hovered {
+				target = 1.0
+
+				if !button.was_hovered {
+					AUD_play_sound(&_ctx.hovered_sound)
+				}
+
+				if INP_is_mouse_pressed(input, .Left) {
+					button.click_proc()
+				}
+			}
+
+			button.was_hovered = is_hovered
+
+			button.hot_t += (target - button.hot_t)*rate
+			y += line_height + _UI_PADDING
+		}
+	} else {
+		_game_tick(input, delta)
+	}
+}
+
+scn_game_draw :: proc(alpha: f32) {
+	GFX_begin_frame()
+	GFX_clear_background(M_FCOLOR_BLACK)
+
+	GFX_begin_3d_renderer(&_ctx.ren3d, _ctx.cam)
+
+	GFX_add_3d_light(&_ctx.ren3d, {
+		position = _ctx.cam.position,
+		intensity = 1.6,
+		radius = 12.0,
+		color = {1.0, 1.0, 1.0},
+		falloff = 2.0,
+	})
+
+	if _ctx.player.tick_since_last_shot < _PLAYER_SHOOT_ANIM_TICK_DURATION {
+		GFX_add_3d_light(&_ctx.ren3d, {
+			position = _ctx.cam.position,
+			intensity = 2.0,
+			radius = 5.0,
+			color = {0.9, 0.75, 0.15},
+			falloff = 2.0,
+		})
+	}
+
+	GFX_draw_3d_rect(
+		&_ctx.ren3d,
+		{-10000.0, 0.0, -10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{ 10000.0, 0.0, -10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{ 10000.0, 0.0,  10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+		{-10000.0, 0.0,  10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
+	)
+
+	for &enemy in _ctx.enemies {
+		_enemy_draw(enemy)
+	}
+
+	for &pickup in _ctx.pickups {
+		_pickup_draw(pickup)
+	}
+
+	PART_draw_emitter(&_ctx.enemy_hit_particle_emitter, &_ctx.ren3d)
+
+	GFX_end_3d_renderer(&_ctx.ren3d)
+
+	GFX_begin_2d_renderer(&_ctx.ren2d)
+
+	GFX_draw_post_fx(&_ctx.ren_fx, &_ctx.ren2d, &_ctx.ren3d)
+
+	GFX_set_2d_layer(&_ctx.ren2d, 10)
+
+	_player_draw_hud()
+
+	if _ctx.is_paused {
+		window_width: f32
+		window_height: f32
+		{
+			w: i32
+			h: i32
+			sdl.GetWindowSize(WND_get_handle(), &w, &h)
+			window_width = f32(w)
+			window_height = f32(h)
+		}
+
+		scale_x := window_width/WINDOW_WIDTH
+		scale_y := window_height/WINDOW_HEIGHT
+		scale := min(scale_x, scale_y)
+
+		GFX_set_2d_layer(&_ctx.ren2d, 100)
+		GFX_draw_2d_rect(&_ctx.ren2d, {0.0, 0.0, window_width, window_height}, {0, 0, 0, 127})
+
+		font_height := f32(_ctx.font.base_size)*_UI_TEXT_SCALE*scale
+		line_height := font_height*1.2
+
+		GFX_draw_2d_string(
+			&_ctx.ren2d,
+			_ctx.font,
+			"PAUSED",
+			{44.0*scale, 40.0*scale},
+			M_COLOR_WHITE,
+			(_UI_TEXT_SCALE + 3.0)*scale,
+		)
+
+		y := window_height/2.0 - (line_height*len(_buttons))/2.0 - (_UI_PADDING*(len(_buttons) - 1))/2.0
+
+		for &button in _buttons {
+			rect := M_Rect{44.0*scale, y, window_width/4.0, line_height}
+
+			GFX_draw_2d_string(
+				&_ctx.ren2d,
+				_ctx.font,
+				button.text,
+				{rect.x*scale, y},
+				M_COLOR_WHITE,
+				_UI_TEXT_SCALE*scale,
+			)
+
+			GFX_draw_2d_line(
+				&_ctx.ren2d,
+				{rect.x*scale, y + line_height},
+				{rect.x*scale + rect.width*button.hot_t, y + line_height},
+				M_COLOR_WHITE,
+				6.0*scale,
+			)
+
+			y += line_height + _UI_PADDING
+		}
+	}
+
+	GFX_end_2d_renderer(&_ctx.ren2d)
+
+	GFX_end_frame()
+	sg.commit()
+}
+
+@(private="file")
+_game_tick_paused :: proc(input: INP_State, delta: f32) {
+}
+
+@(private="file")
+_game_tick :: proc(input: INP_State, delta: f32) {
 	_player_tick(input, delta)
 
 	for &enemy in _ctx.enemies {
@@ -769,74 +982,17 @@ scn_game_tick :: proc(input: INP_State, delta: f32) {
 	PART_tick_emitter(&_ctx.enemy_hit_particle_emitter, delta)
 
 	if _ctx.player.hp <= 0 {
-		total_kill: int
-		for kind in _Enemy_Kind {
-			scn_game_over_add_kill_count(_get_enemy_kind_string(kind), _ctx.kill[kind])
-			total_kill += _ctx.kill[kind]
-		}
-		scn_game_over_add_kill_count("TOTAL", total_kill)
-		SCN_change(SCN_GAME_OVER_HANDLE)
+		_game_over()
 	}
 }
 
-scn_game_draw :: proc(alpha: f32) {
-	GFX_begin_frame()
-	GFX_clear_background(M_FCOLOR_BLACK)
-
-	GFX_begin_3d_renderer(&_ctx.ren3d, _ctx.cam)
-
-	GFX_add_3d_light(&_ctx.ren3d, {
-		position = _ctx.cam.position,
-		intensity = 1.6,
-		radius = 12.0,
-		color = {1.0, 1.0, 1.0},
-		falloff = 2.0,
-	})
-
-	if _ctx.player.tick_since_last_shot < _PLAYER_SHOOT_ANIM_TICK_DURATION {
-		GFX_add_3d_light(&_ctx.ren3d, {
-			position = _ctx.cam.position,
-			intensity = 2.0,
-			radius = 5.0,
-			color = {0.9, 0.75, 0.15},
-			falloff = 2.0,
-		})
+@(private="file")
+_game_over :: proc() {
+	total_kill: int
+	for kind in _Enemy_Kind {
+		scn_game_over_add_kill_count(_get_enemy_kind_string(kind), _ctx.kill[kind])
+		total_kill += _ctx.kill[kind]
 	}
-
-	GFX_draw_3d_rect(
-		&_ctx.ren3d,
-		{-10000.0, 0.0, -10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{ 10000.0, 0.0, -10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{ 10000.0, 0.0,  10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-		{-10000.0, 0.0,  10000.0}, {0.0, 1.0, 0.0}, {127, 127, 127, 255},
-	)
-
-	for &enemy in _ctx.enemies {
-		_enemy_draw(enemy)
-	}
-
-	for &pickup in _ctx.pickups {
-		_pickup_draw(pickup)
-	}
-
-	PART_draw_emitter(&_ctx.enemy_hit_particle_emitter, &_ctx.ren3d)
-
-	GFX_end_3d_renderer(&_ctx.ren3d)
-
-	GFX_begin_2d_renderer(&_ctx.ren2d)
-
-	win_size: [2]i32
-	sdl.GetWindowSize(WND_get_handle(), &win_size.x, &win_size.y)
-
-	GFX_draw_post_fx(&_ctx.ren_fx, &_ctx.ren2d, &_ctx.ren3d)
-
-	GFX_set_2d_layer(&_ctx.ren2d, 10)
-
-	_player_draw_hud()
-
-	GFX_end_2d_renderer(&_ctx.ren2d)
-
-	GFX_end_frame()
-
-	sg.commit()
+	scn_game_over_add_kill_count("TOTAL", total_kill)
+	SCN_change(SCN_GAME_OVER_HANDLE)
 }

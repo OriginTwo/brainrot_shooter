@@ -13,10 +13,6 @@ import stbi "vendor:stb/image"
 import slog "lib:sokol/log"
 import sg "lib:sokol/gfx"
 
-import im "lib:imgui"
-import "lib:imgui/imgui_impl_sdl3"
-import "lib:imgui/imgui_impl_opengl3"
-
 import "shader"
 
 @(private="file") GFX__SWAPCHAIN_COLOR_FORMAT :: sg.Pixel_Format.RGBA8
@@ -46,47 +42,17 @@ GFX_init :: proc(window: ^sdl.Window, gl_ctx: sdl.GLContext) {
 		logger = {func = slog.func},
 	})
 	assert(sg.isvalid())
-
-	when DEV_BUILD {
-		im.CHECKVERSION()
-		im.CreateContext()
-		io := im.GetIO()
-		io.ConfigFlags += {.NavEnableKeyboard, .DockingEnable}
-		io.IniFilename = nil
-		io.LogFilename = nil
-
-		im.StyleColorsDark()
-
-		imgui_impl_sdl3.InitForOpenGL(window, gl_ctx)
-		imgui_impl_opengl3.Init(nil)
-	}
 }
 
 GFX_uninit :: proc() {
-	when DEV_BUILD {
-		imgui_impl_opengl3.Shutdown()
-		imgui_impl_sdl3.Shutdown()
-		im.DestroyContext()
-	}
-
 	sg.shutdown()
 	GFX__ctx = {}
 }
 
 GFX_begin_frame :: proc() {
-	when DEV_BUILD {
-		imgui_impl_opengl3.NewFrame()
-		imgui_impl_sdl3.NewFrame()
-		im.NewFrame()
-	}
 }
 
 GFX_end_frame :: proc() {
-	when DEV_BUILD {
-		im.Render()
-		imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
-	}
-
 	sdl.GL_SwapWindow(GFX__ctx.window)
 }
 

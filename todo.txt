@@ -14,7 +14,7 @@
 	X minimap
 	X hit indicator
 	X out of ammo indicator
-	- pause game
+	X pause game
 	X music
 
 # system/engine

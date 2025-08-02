@@ -4,8 +4,6 @@ import "core:log"
 
 import sdl "vendor:sdl3"
 
-import "lib:imgui/imgui_impl_sdl3"
-
 WND_create :: proc(
 	title: cstring,
 	size: [2]i32,
@@ -59,10 +57,6 @@ WND_set_should_close :: #force_inline proc(val: bool) {
 }
 
 WND_handle_event :: proc(ev: ^sdl.Event) {
-	when DEV_BUILD {
-		imgui_impl_sdl3.ProcessEvent(ev)
-	}
-
 	#partial switch ev.type {
 	case .QUIT:
 		WND__ctx.should_quit = true
